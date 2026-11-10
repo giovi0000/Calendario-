@@ -921,7 +921,11 @@ function dbOp(cal, table, op, {id, data} = {}){
   }
   if (op === 'insert') return sb.from(table).insert(data);
   if (op === 'update') return sb.from(table).update(data).eq('id', id);
-  if (op === 'delete') return sb.from(table).delete().eq('id', id).eq('calendar_id', cal);
+  if (op === 'delete'){
+    // la tabella dei calendari non ha la colonna calendar_id: si cancella per id soltanto
+    const q = sb.from(table).delete().eq('id', id);
+    return table === 'calendars' ? q : q.eq('calendar_id', cal);
+  }
   if (op === 'clear')  return sb.from(table).delete().eq('calendar_id', cal);
 }
 function pinError(error){
