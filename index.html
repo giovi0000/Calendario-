@@ -57,6 +57,13 @@ input,select{background:var(--bg);border:1px solid var(--line);border-radius:8px
 .cardwrap{display:grid;gap:6px}
 .cardtools{display:flex;gap:6px;justify-content:flex-end}
 .cardtools .x{width:auto;padding:4px 8px;font-size:14px}
+.more{position:relative;display:inline-block}
+.more>.x{width:auto;padding:4px 10px;font-size:18px;line-height:1}
+.menu{position:absolute;right:0;top:100%;margin-top:4px;display:grid;min-width:150px;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 6px 18px rgba(0,0,0,.15);z-index:30;overflow:hidden}
+.menu[hidden]{display:none}
+.menuitem{background:none;border:0;text-align:left;padding:10px 14px;font-size:14px;color:var(--fg)}
+.menuitem:hover{background:var(--accent-soft)}
+.menuitem.danger{color:var(--accent)}
 
 /* calendario: barra della settimana */
 .weekbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:8px 10px;margin-bottom:10px}
@@ -860,7 +867,14 @@ function grpPath(id){
   while (g){ parts.unshift(g.name); g = g.parentId ? grpById(g.parentId) : null; }
   return parts.join(' › ');
 }
-function labName(id){ return id === 'none' ? 'Senza laboratorio' : (grpPath(id) || 'Laboratorio'); }
+function labName(id){ return id === 'none' ? (localStorage.getItem('noneLab') || 'Senza laboratorio') : (grpPath(id) || 'Laboratorio'); }
+// rinomina il laboratorio dei calendari senza gruppo (il nome resta su questo dispositivo)
+function renameNone(){
+  const n = (prompt('Nuovo nome per i calendari senza laboratorio:', labName('none')) || '').trim();
+  if (!n) return;
+  localStorage.setItem('noneLab', n);
+  render();
+}
 const isVis = () => true;   // i calendari in lista sono già quelli che questo dispositivo può vedere
 function countCals(gid){
   const kids = groups.filter(g => g.parentId === gid).map(g => g.id);
@@ -1574,13 +1588,17 @@ async function removeCategory(){
 const card = (id, name, n) => `<button type="button" class="card" data-lab="${id}">
   <strong>${esc(name)}</strong><span class="note">${n} calendar${n===1?'io':'i'}</span></button>`;
 
+// menu ⋯: al tocco si aprono le voci (Modifica, Elimina); key è l'identificativo dell'elemento
+const moreMenu = (key, items) => `<div class="more"><button type="button" class="x" data-more aria-label="Opzioni" title="Opzioni">⋯</button>
+  <div class="menu" hidden>${items.map(i => `<button type="button" class="menuitem ${i.danger ? 'danger' : ''}" ${i.attr}="${key}">${i.label}</button>`).join('')}</div></div>`;
 const labCard = g => `<div class="cardwrap">${card(g.id, g.name, countCals(g.id))}
-  <div class="cardtools"><button type="button" class="x" data-grp-ren="${g.id}" aria-label="Rinomina laboratorio" title="Rinomina">✎</button><button type="button" class="x trash" data-grp-del="${g.id}" aria-label="Elimina laboratorio" title="Elimina">🗑</button></div></div>`;
+  <div class="cardtools">${moreMenu(g.id, [{attr:'data-grp-ren', label:'Modifica'}, {attr:'data-grp-del', label:'Elimina', danger:true}])}</div></div>`;
 function homeHTML(){
   const tops = groups.filter(g => !g.parentId).sort(byName).filter(groupShows);
   const cards = tops.map(g => labCard(g));
   const noneN = calendars.filter(c => !c.groupId && isVis(c)).length;
-  if (noneN) cards.push(card('none', 'Senza laboratorio', noneN));
+  if (noneN) cards.push(`<div class="cardwrap">${card('none', labName('none'), noneN)}
+    <div class="cardtools">${moreMenu('none', [{attr:'data-none-ren', label:'Modifica'}])}</div></div>`);
   return cards.length
     ? `<div class="cards">${cards.join('')}</div>`
     : `<div class="empty" style="padding:24px">Nessun laboratorio ancora. Crealo con “+ Laboratorio”.</div>`;
@@ -1591,7 +1609,7 @@ function labHTML(){
   const cals = calendars.filter(c => (isNone ? !c.groupId : c.groupId === curLab) && isVis(c));
   return `${subs.length ? `<div class="sub">Gruppi</div><div class="cards">${subs.map(g => card(g.id, g.name, countCals(g.id))).join('')}</div>` : ''}
     <div class="sub">Calendari</div>
-    <div class="calbtns">${cals.map(c => `<div class="calrow"><button type="button" class="calbtn" data-cal="${c.id}">${lockLabel(c)}${esc(c.name)}</button><button type="button" class="x" data-cal-ren="${c.id}" aria-label="Rinomina" title="Rinomina">✎</button><button type="button" class="x trash" data-cal-del="${c.id}" aria-label="Elimina" title="Elimina">🗑</button></div>`).join('') || '<div class="empty">Nessun calendario qui. Crealo con “+ Calendario”.</div>'}</div>`;
+    <div class="calbtns">${cals.map(c => `<div class="calrow"><button type="button" class="calbtn" data-cal="${c.id}">${lockLabel(c)}${esc(c.name)}</button>${moreMenu(c.id, [{attr:'data-cal-ren', label:'Modifica'}, {attr:'data-cal-del', label:'Elimina', danger:true}])}</div>`).join('') || '<div class="empty">Nessun calendario qui. Crealo con “+ Calendario”.</div>'}</div>`;
 }
 
 // ---- barra in alto ----
@@ -2002,6 +2020,11 @@ function applyDrop(zone, clientY, id){
 // ---- interazione ----
 const root = document.querySelector('.wrap');
 root.addEventListener('click', e => {
+  // chiude i menu ⋯ quando si tocca altrove
+  if (!e.target.closest('.more')) document.querySelectorAll('.menu').forEach(m => { m.hidden = true; });
+  const more = e.target.closest('[data-more]');
+  if (more){ const m = more.nextElementSibling; const wasOpen = !m.hidden; document.querySelectorAll('.menu').forEach(x => { x.hidden = true; }); m.hidden = wasOpen; return; }
+  if (e.target.closest('[data-none-ren]')){ renameNone(); return; }
   if (e.target.id === 'modal'){ closeSettings(); return; }
   if (e.target.id === 'askModal' || e.target.closest('#askNo')){ closeAsk(false); return; }
   if (e.target.closest('#askOk')){ closeAsk(true); return; }
