@@ -529,14 +529,15 @@ function fmtNum(x){
 function toolsEditorHTML(rc){
   const rows = rc.tools.map((t, i) => `<div class="rcrow" data-tool="${i}">
       <input data-tf="name" type="text" value="${esc(t.name || '')}" placeholder="Strumento da prenotare" style="flex:2 1 200px">
-      <input data-tf="day" type="date" value="${t.day || ''}" aria-label="Giorno in cui prenotare" style="flex:1 1 150px">
+      <label class="note" style="flex:1 1 150px;display:flex;gap:6px;align-items:center">Prenota
+        <input data-tf="lead" type="number" min="0" max="60" step="1" value="${t.lead ?? 1}" style="width:70px"> giorni prima</label>
       <button type="button" class="x trash" data-proto-act="tooldel" data-i="${i}" aria-label="Togli" title="Togli">✕</button>
     </div>`).join('');
   return `<fieldset style="border:1px solid var(--line);border-radius:10px;padding:10px;display:grid;gap:8px;min-width:0">
     <legend class="note">Strumenti da prenotare</legend>
     ${rows || '<div class="empty">Nessuno strumento. Aggiungilo qui, con il giorno in cui prenotarlo.</div>'}
     <div><button type="button" class="btn" data-proto-act="tooladd">+ Strumento</button></div>
-    <div class="note">Quando metti il protocollo nel calendario, ogni strumento diventa un promemoria "Prenotare: …" nel suo giorno. Senza giorno, usa la data del protocollo.</div>
+    <div class="note">Scegli quanti giorni prima del protocollo prenotare lo strumento (0 = lo stesso giorno). Quando metti il protocollo nel calendario, il promemoria "Prenotare: …" viene creato automaticamente in quel giorno.</div>
   </fieldset>`;
 }
 // ---- blocchi del protocollo: passaggi, tabelle e ricette, in ordine ----
@@ -710,7 +711,7 @@ function syncDraft(p){
       steps,
       tools: [...document.querySelectorAll('[data-tool]')].map(row => ({
         name: row.querySelector('[data-tf="name"]').value.trim(),
-        day: row.querySelector('[data-tf="day"]').value || ''
+        lead: Math.max(0, parseInt(row.querySelector('[data-tf="lead"]').value, 10) || 0)
       })),
       blocks: $('blkMenu') ? readBlocks() : undefined,
       imports: [...document.querySelectorAll('[data-imp]')].map(row => ({
@@ -1321,7 +1322,9 @@ async function savePlaceProto(){
   const rows = [{id: crypto.randomUUID(), title: p.title, day, slot: encRange(f, to), done: false,
                  category: null, kind: null, created_at: now, calendar_id: curCal}];
   rc.tools.filter(tl => tl.name).forEach((tl, k) => rows.push({
-    id: crypto.randomUUID(), title: 'Prenotare: ' + tl.name, day: tl.day || day, slot: null, done: false,
+    id: crypto.randomUUID(), title: 'Prenotare: ' + tl.name,
+    day: tl.lead !== undefined ? fmt(addDays(new Date(day + 'T00:00'), -(+tl.lead || 0))) : (tl.day || day),
+    slot: null, done: false,
     category: null, kind: 'booking', created_at: now + k + 1, calendar_id: curCal
   }));
   closeSched();
@@ -2212,7 +2215,7 @@ root.addEventListener('click', e => {
       const p = protos.find(x => x.id === protoOpen); if (!p) return;
       syncDraft(p);
       const r = recipeDefaults(parseRecipe(p.recipe));
-      if (pa.dataset.protoAct === 'tooladd') r.tools.push({name: '', day: ''});
+      if (pa.dataset.protoAct === 'tooladd') r.tools.push({name: '', lead: 1});
       else r.tools.splice(+pa.dataset.i, 1);
       p.recipe = JSON.stringify(r);
       render();
