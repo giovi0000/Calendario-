@@ -469,7 +469,8 @@ function recipeDefaults(r){
     items: Array.isArray(r.items) ? r.items : [],
     steps: Array.isArray(r.steps) ? r.steps : [],
     imports: Array.isArray(r.imports) ? r.imports : [],
-    blocks: Array.isArray(r.blocks) ? r.blocks : undefined
+    blocks: Array.isArray(r.blocks) ? r.blocks : undefined,
+    tools: Array.isArray(r.tools) ? r.tools : []
   };
 }
 const VOL_F = {'µl':0.001, 'ml':1, 'l':1000};          // in millilitri
@@ -523,6 +524,20 @@ function fmtNum(x){
   if (!Number.isFinite(x)) return 'unità diverse';
   if (Number.isInteger(x)) return String(x);
   return (Math.round(x * 100) / 100).toString().replace('.', ',');
+}
+// ---- strumenti da prenotare, con il giorno in cui prenotarli ----
+function toolsEditorHTML(rc){
+  const rows = rc.tools.map((t, i) => `<div class="rcrow" data-tool="${i}">
+      <input data-tf="name" type="text" value="${esc(t.name || '')}" placeholder="Strumento da prenotare" style="flex:2 1 200px">
+      <input data-tf="day" type="date" value="${t.day || ''}" aria-label="Giorno in cui prenotare" style="flex:1 1 150px">
+      <button type="button" class="x trash" data-proto-act="tooldel" data-i="${i}" aria-label="Togli" title="Togli">✕</button>
+    </div>`).join('');
+  return `<fieldset style="border:1px solid var(--line);border-radius:10px;padding:10px;display:grid;gap:8px;min-width:0">
+    <legend class="note">Strumenti da prenotare</legend>
+    ${rows || '<div class="empty">Nessuno strumento. Aggiungilo qui, con il giorno in cui prenotarlo.</div>'}
+    <div><button type="button" class="btn" data-proto-act="tooladd">+ Strumento</button></div>
+    <div class="note">Quando metti il protocollo nel calendario, ogni strumento diventa un promemoria "Prenotare: …" nel suo giorno. Senza giorno, usa la data del protocollo.</div>
+  </fieldset>`;
 }
 // ---- blocchi del protocollo: passaggi, tabelle e ricette, in ordine ----
 // Ogni blocco è {type:'text', text} oppure {type:'table', text, cols, rows} oppure {type:'recipe', id, vol}
@@ -693,6 +708,10 @@ function syncDraft(p){
       samples: $('rcSamples').checked,
       items,
       steps,
+      tools: [...document.querySelectorAll('[data-tool]')].map(row => ({
+        name: row.querySelector('[data-tf="name"]').value.trim(),
+        day: row.querySelector('[data-tf="day"]').value || ''
+      })),
       blocks: $('blkMenu') ? readBlocks() : undefined,
       imports: [...document.querySelectorAll('[data-imp]')].map(row => ({
         id: row.dataset.id,
@@ -804,6 +823,7 @@ function protoHTML(){
       <label class="note">Titolo <input id="protoTitleEd" type="text" value="${esc(p.title)}" maxlength="120" style="width:100%"></label>
       ${recipeEditorHTML(recipeDefaults(parseRecipe(p.recipe)), false)}
       ${blocksEditorHTML(recipeDefaults(parseRecipe(p.recipe)))}
+      ${toolsEditorHTML(recipeDefaults(parseRecipe(p.recipe)))}
       <label class="note">Testo del protocollo (i campi da compilare sono tra graffe, per esempio {data})
         <textarea id="protoBody" rows="16" style="width:100%;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px;color:var(--fg)">${esc(p.body)}</textarea></label>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -826,6 +846,7 @@ function protoHTML(){
       : (p.kind === 'recipe' ? '' : '<div class="note">Nessun campo da compilare: il protocollo è pronto.</div>')}
     ${blocksFillHTML(rc)}
     <div style="display:flex;gap:8px;flex-wrap:wrap">
+      ${p.kind === 'recipe' ? '' : `<button type="button" class="btn" id="protoPlace">📅 Metti in calendario</button>`}
       <button type="button" class="btn" id="protoPrint">Stampa / PDF</button>
       <button type="button" class="btn" id="protoClose">Chiudi</button>
     </div>
@@ -1176,6 +1197,7 @@ async function deleteGroup(){
 
 // ---- metti nel calendario: scegli giorno e ore (utile da telefono) ----
 let schedId = null;
+let schedProto = null;   // protocollo da mettere in calendario (quando la finestra serve a questo)
 function openSched(id){
   const t = taskById(id); if (!t) return;
   schedId = id;
@@ -1185,8 +1207,9 @@ function openSched(id){
   $('schTo').value = '10:00';
   $('schedModal').hidden = false;
 }
-function closeSched(){ $('schedModal').hidden = true; schedId = null; }
+function closeSched(){ $('schedModal').hidden = true; schedId = null; schedProto = null; }
 function saveSched(){
+  if (schedProto){ savePlaceProto(); return; }
   const id = schedId;
   const day = $('schDate').value;
   if (!id || !day){ flash('Scegli il giorno.'); return; }
@@ -1272,6 +1295,42 @@ async function deleteGroupById(id){
   groups = groups.filter(x => x.id !== id); render();
   const {error} = await sb.from('groups').delete().eq('id', id);
   if (error){ flash('Eliminazione non riuscita.'); await loadCalendars(); render(); }
+}
+
+// apre la finestra per scegliere giorno e ore del protocollo
+function openProtoPlace(){
+  const p = protos.find(x => x.id === protoOpen); if (!p) return;
+  schedId = null;
+  schedProto = p.id;
+  $('schTitle').textContent = `Metti “${p.title}” in calendario`;
+  $('schDate').value = todayKey();
+  $('schFrom').value = '09:00';
+  $('schTo').value = '10:00';
+  $('schedModal').hidden = false;
+}
+// crea l'attività del protocollo e un promemoria "Prenotare: …" per ogni strumento
+async function savePlaceProto(){
+  const p = protos.find(x => x.id === schedProto);
+  const day = $('schDate').value;
+  if (!p || !day){ flash('Scegli il giorno.'); return; }
+  const f = toMin($('schFrom').value || '09:00');
+  const t = toMin($('schTo').value || '10:00');
+  const to = t > f ? t : f + 60;
+  const rc = recipeDefaults(parseRecipe(p.recipe));
+  const now = Date.now();
+  const rows = [{id: crypto.randomUUID(), title: p.title, day, slot: encRange(f, to), done: false,
+                 category: null, kind: null, created_at: now, calendar_id: curCal}];
+  rc.tools.filter(tl => tl.name).forEach((tl, k) => rows.push({
+    id: crypto.randomUUID(), title: 'Prenotare: ' + tl.name, day: tl.day || day, slot: null, done: false,
+    category: null, kind: 'booking', created_at: now + k + 1, calendar_id: curCal
+  }));
+  closeSched();
+  rows.forEach(r => tasks.push(taskFromDb(r)));
+  render();
+  const results = await Promise.all(rows.map(r => dbOp(curCal, 'tasks', 'insert', {data: r})));
+  const err = results.find(r => r.error);
+  if (err){ if (!pinError(err.error)) flash('Non tutto è stato salvato: ' + err.error.message); loadAll(); }
+  else flash(`Protocollo messo in calendario${rows.length > 1 ? ` con ${rows.length - 1} promemoria` : ''}.`);
 }
 
 // ---- conferma al centro dello schermo (al posto di confirm del browser) ----
@@ -2104,6 +2163,7 @@ root.addEventListener('click', e => {
   if (tabBtn){ protoTab = tabBtn.dataset.ptab; protoOpen = null; render(); return; }
   if (e.target.closest('#protoNew')){ protoNew(); return; }
   if (e.target.closest('#protoSave')){ protoSave(); return; }
+  if (e.target.closest('#protoPlace')){ openProtoPlace(); return; }
   if (e.target.closest('#protoClose')){ protoOpen = null; render(); return; }
   if (e.target.closest('#protoPrint')){
     const p = protos.find(x => x.id === protoOpen); if (!p) return;
@@ -2148,6 +2208,16 @@ root.addEventListener('click', e => {
     if (pa.dataset.protoAct === 'use'){ protoOpen = id; protoMode = 'fill'; render(); }
     if (pa.dataset.protoAct === 'edit'){ protoOpen = id; protoMode = 'edit'; render(); }
     if (pa.dataset.protoAct === 'del'){ protoDelete(id); }
+    if (pa.dataset.protoAct === 'tooladd' || pa.dataset.protoAct === 'tooldel'){
+      const p = protos.find(x => x.id === protoOpen); if (!p) return;
+      syncDraft(p);
+      const r = recipeDefaults(parseRecipe(p.recipe));
+      if (pa.dataset.protoAct === 'tooladd') r.tools.push({name: '', day: ''});
+      else r.tools.splice(+pa.dataset.i, 1);
+      p.recipe = JSON.stringify(r);
+      render();
+      return;
+    }
     if (['blkmenu','blkadd','blkdel','blkup','blkdown'].includes(pa.dataset.protoAct)){
       const p = protos.find(x => x.id === protoOpen); if (!p) return;
       if (pa.dataset.protoAct === 'blkmenu'){ const m = $('blkMenu'); if (m) m.hidden = !m.hidden; return; }
