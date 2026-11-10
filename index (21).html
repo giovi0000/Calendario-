@@ -1,0 +1,2175 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Calendario condiviso</title>
+<style>
+:root{
+  --bg:#e8f6ef; --panel:#ffffff; --fg:#3a1d2b; --muted:#6f7f76; --line:#cfe6da;
+  --accent:#c2457a; --accent-soft:#fbdde9; --today:#e0f4ea; --done:#8aa196; --day:#2f6b52; --day-bg:#d6eee2;
+  --all-bg:#f1faf5; --am-bg:#fbfefc; --pm-bg:#eef7f2; --gut:44px;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#1f141a; --panel:#2a1c24; --fg:#f7e6ee; --muted:#b592a4; --line:#4a2f3d;
+    --accent:#f08cb4; --accent-soft:#4a2536; --today:#3d2230; --done:#7d6070; --day:#c9a6f0; --day-bg:#2e2440;
+    --all-bg:#3a2330; --am-bg:#261b22; --pm-bg:#2a2032; color-scheme:dark;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;
+  padding:12px max(12px,env(safe-area-inset-right,0px)) 12px max(12px,env(safe-area-inset-left,0px))}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.wrap{max-width:1400px;margin:0 auto;display:grid;gap:12px;grid-template-columns:minmax(0,1fr)}
+.btn{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px 10px}
+.btn:hover{border-color:var(--accent)}
+.btn[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--panel)}
+.btn.danger{border-color:var(--accent);color:var(--accent)}
+.btn.sm{padding:3px 8px;font-size:12px}
+.btn.gear{width:34px;height:34px;padding:0;display:grid;place-items:center;font-size:16px;border-radius:50%}
+.btn:disabled{opacity:.4}
+input,select{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:6px 8px;color:var(--fg);min-width:0}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;min-width:0}
+.empty{color:var(--muted);font-size:13px;padding:8px 2px}
+.note{font-size:12px;color:var(--muted)}
+#status{min-height:1.4em;color:var(--muted);font-size:13px}
+
+/* barra in alto */
+#top{display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:8px 10px}
+#top .ttl{font-weight:650;font-size:15px}
+.spacer{flex:1}
+
+/* home e laboratori */
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px 18px;text-align:left;display:flex;flex-direction:column;gap:6px}
+.card strong{font-size:17px}
+.card:hover{border-color:var(--accent)}
+.sub{font-size:13px;color:var(--muted);margin:14px 2px 6px;font-weight:600}
+.calbtns{display:flex;flex-direction:column;gap:8px;max-width:520px}
+.calbtn{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 16px;text-align:left;width:100%}
+.calbtn:hover{border-color:var(--accent)}
+
+/* calendario: barra della settimana */
+.weekbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:8px 10px;margin-bottom:10px}
+#period{font-weight:650;min-width:170px;text-align:center}
+.navgrp,.viewgrp{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.calgrid{display:grid;gap:12px;grid-template-columns:minmax(0,1fr) 290px;align-items:start}
+@media (max-width:900px){.calgrid{grid-template-columns:minmax(0,1fr)}}
+.left{display:grid;gap:12px;min-width:0}
+.side{display:grid;gap:12px;min-width:0}
+.scroll{padding:8px}
+#cal.wide{overflow-x:auto}
+.panel h2{font-size:14px;margin:0;padding:10px 12px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:8px}
+
+/* settimana */
+.week{display:grid;gap:6px;width:100%;grid-template-columns:repeat(7,minmax(0,1fr));align-items:start}
+.dcol{min-width:0;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--panel);display:flex;flex-direction:column;min-height:320px}
+.dayhead{padding:6px 8px;display:flex;align-items:center;justify-content:space-between;gap:4px;font-size:12px;color:var(--day);background:var(--day-bg);font-weight:650}
+.dayhead .dname{display:flex;flex-direction:column;line-height:1.1}
+.dayhead strong{font-size:16px;color:var(--fg)}
+.dayhead.is-today{background:var(--today)}
+.dtog{background:none;border:1px solid var(--line);border-radius:6px;padding:0 7px;font-size:12px;line-height:18px;color:var(--muted)}
+.dtog[aria-expanded="true"]{background:var(--accent);border-color:var(--accent);color:var(--panel)}
+.allday{padding:6px;display:flex;flex-direction:column;gap:6px;background:var(--all-bg);min-height:34px;border-bottom:1px solid var(--line)}
+.ov{padding:6px;display:flex;flex-direction:column;gap:6px;flex:1;min-height:240px}
+.none{color:var(--muted);text-align:center;padding:12px 0;font-size:12px}
+.item{display:flex;gap:6px;align-items:flex-start;background:var(--accent-soft);border-radius:6px;padding:5px 6px;font-size:13px;cursor:grab;min-width:0}
+.item.cat{background:color-mix(in srgb,var(--c) 25%,var(--panel));border-left:4px solid var(--c)}
+.item.done{background:transparent;border:1px dashed var(--line)}
+.item.done .ct{text-decoration:line-through;color:var(--done)}
+.item.sel,.block.sel{box-shadow:0 0 0 2px var(--accent)}
+/* copie delle prenotazioni: blu a righe, riconoscibili a colpo d'occhio */
+.bk{background:repeating-linear-gradient(135deg,#e5e7eb 0 8px,#d1d5db 8px 16px)!important;border:1px dashed #6b7280!important;color:#374151}
+.bk .ct,.bk .rng{color:#374151}
+@media (prefers-color-scheme: dark){
+  .bk{background:repeating-linear-gradient(135deg,#3f3f46 0 8px,#52525b 8px 16px)!important;border-color:#a1a1aa!important;color:#e4e4e7}
+  .bk .ct,.bk .rng{color:#e4e4e7}
+}
+.ibody{flex:1;min-width:0;display:flex;flex-direction:column}
+.ibody .ct{white-space:normal;word-break:break-word;line-height:1.25}
+.rng{font-size:11px;color:var(--muted);font-weight:600}
+
+/* tabella oraria del giorno aperto */
+.tl{position:relative;width:100%;margin:4px 0}
+.hl{position:absolute;left:0;width:var(--gut);padding-left:4px;font-size:11px;color:var(--muted);font-weight:600;transform:translateY(-7px)}
+.hline{position:absolute;left:var(--gut);right:0;border-top:1px solid var(--line)}
+.pl{position:absolute;left:0;right:0;font-size:11px;font-weight:650;color:var(--day);background:var(--day-bg);padding:3px 6px;line-height:16px}
+.block{position:absolute;border-radius:6px;padding:4px 6px;background:var(--accent-soft);overflow:hidden;cursor:grab;font-size:12.5px;display:flex;flex-direction:column;gap:2px;border:1px solid rgba(0,0,0,.06);box-shadow:0 1px 2px rgba(0,0,0,.05)}
+.block.cat{background:color-mix(in srgb,var(--c) 28%,var(--panel));border-left:4px solid var(--c)}
+.block.done{opacity:.6}
+.block.done .ct{text-decoration:line-through}
+.block .ct{white-space:normal;word-break:break-word;line-height:1.2}
+.block .rng{font-size:10.5px}
+.dragging{opacity:.4}
+.over{background:var(--accent-soft)!important}
+body.picking .ov,body.picking .allday,body.picking .tl,body.picking .mcell,body.picking #list{outline:1px dashed var(--accent);outline-offset:-3px}
+
+/* mese */
+.month{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;min-width:0}
+.month>*{background:var(--panel);min-width:0;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.mhead{padding:6px;font-size:12px;color:var(--day);background:var(--day-bg)!important;text-align:center;font-weight:650}
+.mcell{min-height:96px;padding:5px;display:flex;flex-direction:column;gap:4px;background:var(--all-bg)}
+.mcell.out{opacity:.45}
+.mcell.is-today{background:var(--today)!important}
+.mnum{font-size:12px;color:var(--muted);font-weight:600}
+
+/* elementi di liste e checklist */
+.chip{display:flex;align-items:center;gap:5px;background:var(--accent-soft);border-radius:6px;padding:3px 4px 3px 3px;font-size:12.5px;cursor:grab;user-select:none;min-width:0}
+.chip.cat{background:color-mix(in srgb,var(--c) 25%,var(--panel));border-left:4px solid var(--c)}
+.chip.done{background:transparent;border:1px dashed var(--line);color:var(--done)}
+.chip.done.cat{border-left:4px solid var(--c)}
+.chip.done .ct{text-decoration:line-through}
+.chip.sel{box-shadow:0 0 0 2px var(--accent)}
+.ct{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ck,.x{flex:none;border:0;background:none;padding:0;line-height:1;color:var(--muted);font-size:13px;width:16px;height:16px;display:grid;place-items:center;border-radius:4px}
+.ck{border:1px solid var(--muted);border-radius:4px;font-size:10px;color:var(--accent)}
+.x:hover,.ck:hover{color:var(--fg)}
+.list{padding:0 10px 10px;display:grid;gap:6px;min-height:100px}
+.add{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px;padding:10px}
+.add .full{grid-column:1/-1}
+.add .btn{background:var(--accent);border-color:var(--accent);color:var(--panel)}
+.grp-h{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:650;margin-top:8px}
+.grp-h .gcount{margin-left:auto;font-weight:400;color:var(--muted)}
+.dot{width:10px;height:10px;border-radius:50%;flex:none}
+.bkrow{display:grid;gap:6px;padding:8px;border:1px solid var(--line);border-radius:10px;cursor:grab}
+.bkrow.done .ct{text-decoration:line-through;color:var(--done)}
+.bkrow .line{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.bkrow .when{color:var(--muted);font-size:12px}
+.bkrow .btn.sm{font-size:12px;padding:3px 8px}
+.trash{width:auto;font-size:14px}
+.protorow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 0;border-bottom:1px solid var(--line)}
+.protorow .ct{flex:1;min-width:120px}
+.rcrow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:6px;border:1px solid var(--line);border-radius:8px}
+.rcrow input,.rcrow select{flex:1 1 110px;min-width:0;width:auto}
+.rcrow [data-rc="name"],.rcrow [data-st-f="text"],.rcrow [data-st-f="cols"]{flex:2 1 200px}
+
+/* modifica attività */
+#editor{display:none}
+#editor.on{display:block}
+.ed{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;padding:12px}
+.ed label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted);min-width:0}
+.ed label.inline{flex-direction:row;align-items:center;gap:8px;color:var(--fg);font-size:13px}
+.ed input,.ed select{width:100%}
+.ed input[type=checkbox]{width:auto}
+.ed input:disabled{opacity:.4}
+.edbtns{display:flex;flex-wrap:wrap;gap:8px;align-items:end;grid-column:1/-1}
+.edtitle{font-size:12px;color:var(--muted);padding:10px 12px 0}
+
+/* popup impostazioni */
+.modalback{position:fixed;inset:0;background:rgba(0,0,0,.35);display:grid;place-items:center;padding:12px;z-index:50}
+.modalback[hidden]{display:none}
+.modal{background:var(--panel);border:1px solid var(--line);border-radius:14px;max-width:980px;width:100%;max-height:92vh;overflow:auto}
+.mhead{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid var(--line)}
+.mhead h2{margin:0;font-size:15px}
+.setgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px;padding:12px}
+.setbox{display:flex;flex-direction:column;gap:8px;border:1px solid var(--line);border-radius:10px;padding:10px;min-width:0}
+.setbox h3{margin:0;font-size:13px}
+.setbox label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted)}
+.setbox input[type=text],.setbox input[type=url],.setbox select{width:100%}
+.setbox input[type=color]{width:42px;height:34px;padding:2px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
+.setbox .row{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.setbox .row select,.setbox .row input[type=text]{flex:1;min-width:120px}
+.swatches{display:flex;gap:8px;flex-wrap:wrap}
+.sw{width:30px;height:30px;border-radius:50%;border:2px solid var(--line);padding:0}
+body.hasimg .panel,body.hasimg #top{background:color-mix(in srgb,var(--panel) 88%,transparent)}
+
+/* telefono */
+@media (max-width:700px){
+  :root{--gut:34px}
+  .btn{padding:9px 12px;font-size:15px}
+  .item{padding:9px 8px;font-size:14px}
+  .hl{font-size:11px}
+  .pl{font-size:10px}
+  #top .ttl{font-size:16px}
+  #period{min-width:0;font-size:15px}
+  #top .ttl{flex:1 1 100%}
+  #top .spacer{display:none}
+  .navgrp,.viewgrp{flex:1 1 100%;justify-content:center}
+  .navgrp #period{flex:1}
+  body{padding:8px}
+  .week{gap:3px}
+  .dayhead{padding:4px 2px;flex-direction:column;align-items:center;font-size:10px}
+  .dayhead strong{font-size:13px}
+  .dtog{padding:0 4px}
+  .item{font-size:11px;padding:4px}
+  .block{font-size:11px;padding:3px 4px}
+  .hl{font-size:9px;padding-left:2px}
+  .pl{font-size:9px}
+  .ov{min-height:200px}
+}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <nav id="top" aria-label="Navigazione"></nav>
+  <div id="view"></div>
+  <div class="modalback" id="askModal" hidden>
+    <div class="modal" role="alertdialog" aria-label="Conferma" style="max-width:420px">
+      <div style="padding:18px 18px 8px">
+        <p id="askText" style="margin:0;white-space:pre-line;font-size:15px"></p>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;padding:12px 18px">
+        <button type="button" class="btn" id="askNo">Annulla</button>
+        <button type="button" class="btn danger" id="askOk">Elimina</button>
+      </div>
+    </div>
+  </div>
+  <div id="status"></div>
+
+  <div class="modalback" id="modal" hidden>
+    <div class="modal" role="dialog" aria-label="Impostazioni">
+      <div class="mhead">
+        <h2>Impostazioni</h2>
+        <div style="display:flex;gap:6px;align-items:center">
+          <button class="btn gear" id="lockOut" title="Esci: dimentica i PIN su questo dispositivo" aria-label="Esci">⎋</button>
+          <button class="btn" id="setClose">Chiudi</button>
+        </div>
+      </div>
+      <div class="setgrid">
+
+        <div class="setbox">
+          <h3>Calendario aperto</h3>
+          <label>Nome <input id="setName" type="text" maxlength="60"></label>
+          <div class="row"><button class="btn" id="setNameSave">Salva nome</button></div>
+          <label>Laboratorio / gruppo <select id="setGroup"></select></label>
+          <label>PIN (vuoto = nessun PIN) <input id="setCode" type="text" maxlength="30" autocomplete="off"></label>
+          <div class="note" id="roleInfo"></div>
+          <div class="row"><button class="btn" id="asAdmin">Entra come admin</button></div>
+          <div class="row"><button class="btn" id="setCodeSave">Salva PIN membri</button></div>
+          <div id="adminBlock" hidden>
+            <label>PIN admin <input id="setAdmin" type="text" maxlength="30" autocomplete="off" placeholder="Nuovo PIN admin"></label>
+            <div class="row"><button class="btn" id="setAdminSave">Salva PIN admin</button></div>
+          </div>
+          <div class="note">Il PIN è cifrato sul database e non viene mai mostrato, nemmeno a chi ha il link.</div>
+          <div class="row"><button class="btn" id="linkMake">Crea link personale</button><button class="btn danger" id="linkRevoke">Revoca link</button></div>
+          <input id="linkOut" type="text" readonly placeholder="Il link personale comparirà qui" aria-label="Link personale">
+          <div class="note">Chi ha il link personale entra senza PIN. Tienilo per te.</div>
+          <div class="row"><button class="btn danger" id="setDelete">Elimina questo calendario</button></div>
+        </div>
+
+        <div class="setbox">
+          <h3>Gruppi e laboratori</h3>
+          <label>Nuovo gruppo <input id="grpName" type="text" maxlength="60" placeholder="Nome"></label>
+          <label>Dentro a <select id="grpParent"></select></label>
+          <div class="row"><button class="btn" id="grpAdd">Crea gruppo</button></div>
+          <label>Gestisci un gruppo <select id="grpSel"></select></label>
+          <div class="row">
+            <button class="btn" id="grpRename">Rinomina</button>
+            <button class="btn danger" id="grpDel">Elimina</button>
+          </div>
+          <div class="note">Un gruppo si può eliminare solo se è vuoto.</div>
+        </div>
+
+        <div class="setbox">
+          <h3>Categorie</h3>
+          <label>Categoria <select id="catSel"></select></label>
+          <div class="row">
+            <label style="flex-direction:row;align-items:center;gap:6px">Colore <input id="catColor" type="color" value="#c2457a"></label>
+            <button class="btn" id="catRename">Rinomina</button>
+            <button class="btn danger" id="catDel">Elimina</button>
+          </div>
+          <label>Nuova categoria</label>
+          <div class="row">
+            <input id="catName" type="text" placeholder="Nome" maxlength="60" aria-label="Nome nuova categoria">
+            <input id="catNewColor" type="color" value="#c2457a" aria-label="Colore nuova categoria">
+            <button class="btn" id="catAdd">Crea</button>
+          </div>
+        </div>
+
+        <div class="setbox">
+          <h3>Sfondo</h3>
+          <div class="swatches" aria-label="Colori di sfondo">
+            <button type="button" class="sw" data-bg-color="#e8f6ef" style="background:#e8f6ef" aria-label="Menta"></button>
+            <button type="button" class="sw" data-bg-color="#fdf4f7" style="background:#fdf4f7" aria-label="Rosa"></button>
+            <button type="button" class="sw" data-bg-color="#efe6fb" style="background:#efe6fb" aria-label="Lavanda"></button>
+            <button type="button" class="sw" data-bg-color="#e6f1fb" style="background:#e6f1fb" aria-label="Cielo"></button>
+            <button type="button" class="sw" data-bg-color="#f7f1e3" style="background:#f7f1e3" aria-label="Sabbia"></button>
+            <button type="button" class="sw" data-bg-color="#e5e5e5" style="background:#e5e5e5" aria-label="Grigio"></button>
+            <button type="button" class="sw" data-bg-color="#2b1f27" style="background:#2b1f27" aria-label="Scuro"></button>
+          </div>
+          <label style="flex-direction:row;align-items:center;gap:6px">Colore personalizzato <input id="bgColor" type="color" value="#e8f6ef"></label>
+          <label>Immagine (indirizzo https://…) <input id="bgUrl" type="url" placeholder="https://…"></label>
+          <div class="row">
+            <button class="btn" id="bgImg">Usa immagine</button>
+            <button class="btn" id="bgReset">Predefinito (menta)</button>
+          </div>
+          <div class="note">Vale solo per questo calendario e solo su questo dispositivo.</div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script>
+// ---- configurazione Supabase ----
+const SUPABASE_URL = 'https://mugzdzlyugjdprezcbac.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im11Z3pkemx5dWdqZHByZXpjYmFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM4ODg4MTQsImV4cCI6MjEwOTQ2NDgxNH0.ojM-G8vJRUXHI1deq3uPAvUcb3zJMbImcUd-jCdj44g';
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// ---- impostazioni della tabella oraria: modificabili qui ----
+const T0 = 8 * 60;    // inizio tabella: 08:00
+const T1 = 19 * 60;   // fine tabella: 19:00
+const PM = 13 * 60;   // inizio pomeriggio
+const ROW_H = 44;     // altezza di un'ora, in pixel
+const HEAD_H = 22;    // etichetta "Mattina" in cima
+const DIV_H = 22;     // etichetta "Pomeriggio" tra le due parti
+const LEGACY_SLOT = {am: '08:00-12:00', pm: '13:00-18:00'};
+const MAIN_ID = 'main';
+const DEFAULT_BG = '#e8f6ef';   // menta: sfondo predefinito, nella modalità chiara
+
+// ---- utilità ----
+const WD = ['Lun','Mar','Mer','Gio','Ven','Sab','Dom'];
+function pad(n){ return String(n).padStart(2,'0'); }
+const HM = m => `${pad(Math.floor(m/60))}:${pad(m % 60)}`;
+const toMin = v => { const [h,m] = v.split(':').map(Number); return h*60 + m; };
+const fmt = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+const addDays = (d,n) => new Date(d.getFullYear(), d.getMonth(), d.getDate()+n);
+const mondayOf = d => addDays(d, -((d.getDay()+6)%7));
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const slug = s => String(s).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+const todayKey = () => fmt(new Date());
+const $ = id => document.getElementById(id);
+
+// ---- orario: salvato nella colonna "slot" come "09:00-11:00"; nessun orario = tutto il giorno ----
+function parseSlot(s){
+  if (!s || s === 'all') return null;
+  const m = String(s).match(/^(\d{1,2})(?::(\d{2}))?(?:-(\d{1,2})(?::(\d{2}))?)?$/);
+  if (!m) return null;
+  const from = (+m[1])*60 + (+(m[2] || 0));
+  let to = m[3] !== undefined ? (+m[3])*60 + (+(m[4] || 0)) : from + 60;
+  if (to <= from) to = from + 60;
+  return {from, to};
+}
+const encRange = (from, to) => `${HM(from)}-${HM(to)}`;
+
+function yOf(min){ return HEAD_H + (min - T0)/60*ROW_H + (min >= PM ? DIV_H : 0); }
+const TOTAL = yOf(T1);
+function minFromY(y){
+  let m = T0;
+  for (let h = T0/60; h < T1/60; h++){ if (y >= yOf(h*60)) m = h*60; }
+  return m;
+}
+
+// ---- stato ----
+let view = 'home';        // 'home' | 'lab' | 'cal'
+let curLab = null;        // gruppo aperto, oppure 'none' per i calendari senza gruppo
+let curCal = null;        // calendario aperto
+let calendars = [];       // {id, name, position, hidden, protected, groupId}
+let groups = [];          // {id, name, parentId, position}
+let tasks = [];           // {id, title, day, slot, done, category, createdAt}
+let categories = [];      // {id, name, color, position}
+let bookings = [];        // {id, title, day, slot, done, createdAt}
+let cursor = (() => { const n = new Date(); return new Date(n.getFullYear(), n.getMonth(), n.getDate()); })();
+let weekView = 'week';
+let phoneAll = false;     // su telefono: false = un giorno alla volta, true = tutta la settimana a scorrimento
+let selectedId = null;
+let expandedDays = new Set();
+let statusTimer = null;
+
+// ---- protocolli per laboratorio ----
+let protos = [];          // {id, groupId, title, body, createdAt}
+let protoOpen = null;     // protocollo aperto (id)
+let protoMode = 'edit';   // 'edit' per modificare, 'fill' per compilare e stampare
+const protoFromDb = r => ({id:r.id, groupId:r.group_id, kind:r.kind||'protocol', title:r.title, body:r.body||'', recipe:r.recipe||'', createdAt:r.created_at||0});
+let protoTab = 'protocols';   // scheda attiva: 'protocols' oppure 'recipes'
+const RECIPE_DEFAULT = () => JSON.stringify({base:{label:'Volume finale', value:1000, unit:'ml'}, items:[], steps:[], imports:[]});
+
+// ricetta collegata a un protocollo: calcola la tabella per il volume scelto
+function recipeTableHTML(rec, vol){
+  const rows = calcItems(rec, vol, 1).filter(c => c.name);
+  if (!rows.length) return '';
+  return `<table style="border-collapse:collapse;width:100%;margin:4px 0">${rows.map(c =>
+    `<tr><td style="border-bottom:1px solid var(--line);padding:4px 6px">${esc(c.name)}</td><td style="border-bottom:1px solid var(--line);padding:4px 6px;text-align:right;font-weight:650">${fmtNum(c.value)} ${esc(c.unit)}</td></tr>`).join('')}</table>`;
+}
+function importsEditorHTML(rc){
+  const rows = rc.imports.map((imp, i) => {
+    const rec = protos.find(x => x.id === imp.id); if (!rec) return '';
+    const rr = recipeDefaults(parseRecipe(rec.recipe));
+    return `<div class="rcrow" data-imp="${i}" data-id="${imp.id}">
+      <span style="flex:2 1 160px">${esc(rec.title)}</span>
+      <input data-impv type="number" step="any" value="${imp.vol}" style="flex:1 1 90px"> <span class="note">${esc(rr.base.unit)}</span>
+      <button type="button" class="x trash" data-proto-act="impdel" data-i="${i}" aria-label="Togli ricetta">✕</button></div>`;
+  }).join('');
+  const options = protos.filter(p => p.kind === 'recipe').map(p => `<option value="${p.id}">${esc(p.title)}</option>`).join('');
+  return `<fieldset style="border:1px solid var(--line);border-radius:10px;padding:10px;display:grid;gap:8px;min-width:0">
+    <legend class="note">Ricette dei reagenti collegate</legend>
+    ${rows || '<div class="empty">Nessuna ricetta collegata.</div>'}
+    ${options ? `<div style="display:flex;gap:8px;flex-wrap:wrap"><select id="impSel" style="flex:1 1 200px">${options}</select>
+      <button type="button" class="btn" data-proto-act="impadd">+ Aggiungi ricetta</button></div>`
+      : '<div class="note">Non hai ancora ricette: creale nella scheda Ricette.</div>'}
+  </fieldset>`;
+}
+function importsFillHTML(rc){
+  if (!rc.imports.length) return '';
+  return `<div style="display:grid;gap:10px"><h3 style="margin:8px 0 0;font-size:14px">Ricette dei reagenti</h3>${rc.imports.map((imp, i) => {
+    const rec = protos.find(x => x.id === imp.id); if (!rec) return '';
+    const rr = recipeDefaults(parseRecipe(rec.recipe));
+    return `<div><div><b>${esc(rec.title)}</b> · volume <input data-impf="${i}" type="number" step="any" value="${imp.vol}" style="width:110px"> ${esc(rr.base.unit)}</div>
+      <div id="imp-${i}">${recipeTableHTML(rr, imp.vol)}</div></div>`;
+  }).join('')}</div>`;
+}
+function refreshImports(){
+  const p = protos.find(x => x.id === protoOpen); if (!p) return;
+  const rc = recipeDefaults(parseRecipe(p.recipe));
+  document.querySelectorAll('[data-impf]').forEach(inp => {
+    const i = inp.dataset.impf, imp = getBlocks(rc)[i];
+    const rec = imp && protos.find(x => x.id === imp.id);
+    const out = $(`imp-${i}`);
+    if (rec && out) out.innerHTML = recipeTableHTML(recipeDefaults(parseRecipe(rec.recipe)), +inp.value || 0);
+  });
+}
+
+// ---- ricetta: quantità calcolate dal volume da preparare e dai campioni ----
+// modalità degli ingredienti: 'vol' = proporzionale al volume base, 'sample' = per campione, 'fixed' = fisso
+function parseRecipe(s){ try { const r = JSON.parse(s || 'null'); return (r && typeof r === 'object') ? r : {}; } catch(_) { return {}; } }
+function recipeDefaults(r){
+  return {
+    base: {label: r.base?.label || 'Volume', value: +r.base?.value || 100, unit: r.base?.unit || 'ml'},
+    samples: !!r.samples,
+    items: Array.isArray(r.items) ? r.items : [],
+    steps: Array.isArray(r.steps) ? r.steps : [],
+    imports: Array.isArray(r.imports) ? r.imports : [],
+    blocks: Array.isArray(r.blocks) ? r.blocks : undefined
+  };
+}
+const VOL_F = {'µl':0.001, 'ml':1, 'l':1000};          // in millilitri
+const CONC_F = {'M':1, 'mM':1e-3, 'µM':1e-6, 'nM':1e-9, '%':1, 'X':1}; // molare, oppure rapporto (%, X)
+// stock e finale si possono confrontare solo se sono nella stessa famiglia (molari, percentuali o X)
+const CONC_FAM = {'M':'molare', 'mM':'molare', 'µM':'molare', 'nM':'molare', '%':'percentuale', 'X':'X'};
+function calcItems(r, target, n){
+  const k = target / r.base.value;
+  const totalMl = target * (VOL_F[r.base.unit] || 1);
+  const out = r.items.map(it => {
+    const q = +it.qty || 0;
+    if (it.mode === 'dil'){
+      // Ci·Vi = Cf·Vf: Vi = Cf·Vf / Ci, con Vf il volume totale da preparare.
+      // Con % e X basta che stock e finale abbiano la stessa unità (il rapporto conta).
+      if (CONC_FAM[it.ciu] !== CONC_FAM[it.cfu]) return {name: it.name, unit: 'ml', value: NaN, dil: true};
+      const ci = (+it.ci || 0) * (CONC_F[it.ciu] || 1);
+      const cf = (+it.cf || 0) * (CONC_F[it.cfu] || 1);
+      const vi = ci > 0 ? (cf * totalMl) / ci : 0;
+      return {name: it.name, unit: 'ml', value: vi, dil: true};
+    }
+    const value = it.mode === 'sample' ? q * n : (it.mode === 'fixed' ? q : q * k);
+    return {name: it.name, unit: it.unit || '', value};
+  });
+  // H2O: ciò che resta del volume finale dopo tutti gli ingredienti liquidi. Sta sempre in fondo.
+  if (out.length){
+    const used = out.reduce((s, o) => {
+      if (o.dil) return s + (Number.isFinite(o.value) ? o.value : 0);
+      if (VOL_F[o.unit] !== undefined) return s + (Number.isFinite(o.value) ? o.value * VOL_F[o.unit] : 0);
+      return s;
+    }, 0);
+    const rest = totalMl - used;
+    out.push({name: rest < 0 ? 'H2O: volume insufficiente' : 'H2O (q.b. a volume)', unit: 'ml', value: rest, warn: rest < 0});
+  }
+  return out;
+}
+const colsOf = st => (st.cols || '').split(',').map(s => s.trim()).filter(Boolean);
+// passaggi del protocollo; quelli con tabella diventano celle da compilare
+function stepsFillHTML(rc){
+  if (!rc.steps.length) return '';
+  return `<div style="display:grid;gap:12px"><h3 style="margin:8px 0 0;font-size:14px">Passaggi</h3>${rc.steps.map((st, si) => `
+    <div><div>${si + 1}. ${esc(st.text)}</div>${st.tbl && colsOf(st).length ? stepTableHTML(st, si) : ''}</div>`).join('')}</div>`;
+}
+function stepTableHTML(st, si){
+  const cols = colsOf(st);
+  const body = [...Array(Math.max(1, +st.rows || 1))].map((_, r) => `<tr>${cols.map((c, ci) =>
+    `<td style="padding:2px;border-bottom:1px solid var(--line)"><input data-tbl="${si}" data-r="${r}" data-c="${ci}" type="text" style="width:100%;min-width:70px"></td>`).join('')}</tr>`).join('');
+  return `<div style="overflow-x:auto;margin-top:6px"><table style="border-collapse:collapse;width:100%">
+    <tr>${cols.map(c => `<th style="text-align:left;padding:4px;border-bottom:1px solid var(--line)">${esc(c)}</th>`).join('')}</tr>${body}</table></div>`;
+}
+function fmtNum(x){
+  if (!Number.isFinite(x)) return 'unità diverse';
+  if (Number.isInteger(x)) return String(x);
+  return (Math.round(x * 100) / 100).toString().replace('.', ',');
+}
+// ---- blocchi del protocollo: passaggi, tabelle e ricette, in ordine ----
+// Ogni blocco è {type:'text', text} oppure {type:'table', text, cols, rows} oppure {type:'recipe', id, vol}
+function getBlocks(rc){
+  if (Array.isArray(rc.blocks)) return rc.blocks;
+  // protocolli salvati prima dei blocchi: passaggi e ricette in un unico elenco
+  return [
+    ...rc.steps.map(st => ({type: st.tbl ? 'table' : 'text', text: st.text || '', cols: st.cols || '', rows: st.rows || 1})),
+    ...rc.imports.map(imp => ({type: 'recipe', id: imp.id, vol: imp.vol}))
+  ];
+}
+function readBlocks(){
+  return [...document.querySelectorAll('[data-blk]')].map(row => {
+    const type = row.dataset.type;
+    const get = f => { const el = row.querySelector(`[data-bf="${f}"]`); return el ? el.value : ''; };
+    if (type === 'recipe') return {type, id: row.dataset.id, vol: +get('vol') || 0};
+    if (type === 'table') return {type, text: get('text').trim(), cols: get('cols').trim(), rows: +get('rows') || 1};
+    return {type: 'text', text: get('text').trim()};
+  });
+}
+function blocksEditorHTML(rc){
+  const bl = getBlocks(rc);
+  const recOpts = protos.filter(p => p.kind === 'recipe').map(p => `<option value="${p.id}">${esc(p.title)}</option>`).join('');
+  const rows = bl.map((b, i) => {
+    const label = b.type === 'recipe' ? 'Ricetta' : (b.type === 'table' ? 'Tabella' : 'Passaggio');
+    const tools = `<button type="button" class="x" data-proto-act="blkup" data-i="${i}" aria-label="Sposta su" title="Sposta su">↑</button>
+      <button type="button" class="x" data-proto-act="blkdown" data-i="${i}" aria-label="Sposta giù" title="Sposta giù">↓</button>
+      <button type="button" class="x trash" data-proto-act="blkdel" data-i="${i}" aria-label="Togli" title="Togli">✕</button>`;
+    let body;
+    if (b.type === 'recipe'){
+      const rec = protos.find(x => x.id === b.id);
+      const rr = rec ? recipeDefaults(parseRecipe(rec.recipe)) : null;
+      body = `<span style="flex:2 1 160px">${esc(rec ? rec.title : 'Ricetta non trovata')}</span>
+        <input data-bf="vol" type="number" step="any" value="${b.vol}" style="flex:1 1 90px"> <span class="note">${esc(rr ? rr.base.unit : '')}</span>`;
+    } else if (b.type === 'table'){
+      body = `<input data-bf="text" type="text" value="${esc(b.text || '')}" placeholder="Titolo della tabella" style="flex:2 1 180px">
+        <input data-bf="cols" type="text" value="${esc(b.cols || '')}" placeholder="Colonne, separate da virgola" style="flex:2 1 200px">
+        <input data-bf="rows" type="number" min="1" value="${b.rows || 1}" placeholder="Righe" style="flex:1 1 80px">`;
+    } else {
+      body = `<input data-bf="text" type="text" value="${esc(b.text || '')}" placeholder="Passaggio, per esempio: caricare i campioni" style="flex:1 1 100%">`;
+    }
+    return `<div class="rcrow" data-blk="${i}" data-type="${b.type}" data-id="${b.id || ''}">
+      <span class="note" style="min-width:76px">${label}</span>${body}${tools}</div>`;
+  }).join('');
+  return `<fieldset style="border:1px solid var(--line);border-radius:10px;padding:10px;display:grid;gap:8px;min-width:0">
+    <legend class="note">Passaggi e blocchi</legend>
+    ${rows || '<div class="empty">Nessun passaggio ancora. Premi + per aggiungerne uno.</div>'}
+    <div><button type="button" class="btn" data-proto-act="blkmenu">+ Aggiungi</button></div>
+    <div id="blkMenu" hidden style="display:grid;gap:6px;padding:8px;border:1px solid var(--line);border-radius:10px;max-width:520px">
+      <button type="button" class="btn" data-proto-act="blkadd" data-t="text">Passaggio (testo)</button>
+      <button type="button" class="btn" data-proto-act="blkadd" data-t="table">Tabella da compilare</button>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <select id="blkRecSel" style="flex:1 1 180px">${recOpts || '<option value="">Nessuna ricetta: creala nella scheda Ricette</option>'}</select>
+        <button type="button" class="btn" data-proto-act="blkadd" data-t="recipe">Ricetta</button>
+      </div>
+    </div>
+    <div class="note">Usa ↑ e ↓ per mettere i blocchi nell'ordine del protocollo.</div>
+  </fieldset>`;
+}
+// versione per compilare: passaggi numerati, tabelle da riempire, ricette con il loro volume
+function blocksFillHTML(rc){
+  const bl = getBlocks(rc); if (!bl.length) return '';
+  let n = 0;
+  const items = bl.map((b, i) => {
+    if (b.type === 'recipe'){
+      const rec = protos.find(x => x.id === b.id); if (!rec) return '';
+      const rr = recipeDefaults(parseRecipe(rec.recipe));
+      return `<div><div><b>${esc(rec.title)}</b> · volume <input data-impf="${i}" type="number" step="any" value="${b.vol}" style="width:110px"> ${esc(rr.base.unit)}</div>
+        <div id="imp-${i}">${recipeTableHTML(rr, b.vol)}</div></div>`;
+    }
+    n++;
+    const head = `<div>${n}. ${esc(b.text || '')}</div>`;
+    return (b.type === 'table' && colsOf(b).length) ? `<div>${head}${stepTableHTML(b, i)}</div>` : `<div>${head}</div>`;
+  }).join('');
+  return `<div style="display:grid;gap:12px"><h3 style="margin:8px 0 0;font-size:14px">Passaggi</h3>${items}</div>`;
+}
+// stampa: stessi blocchi, con i valori inseriti nelle tabelle e i volumi scelti
+function blocksPrint(rc){
+  const td = 'border:1px solid #999;padding:4px 6px';
+  let n = 0;
+  return getBlocks(rc).map((b, i) => {
+    if (b.type === 'recipe'){
+      const rec = protos.find(x => x.id === b.id); if (!rec) return '';
+      const rr = recipeDefaults(parseRecipe(rec.recipe));
+      const inp = document.querySelector(`[data-impf="${i}"]`);
+      const vol = inp ? (+inp.value || 0) : b.vol;
+      return `<h3>Ricetta: ${esc(rec.title)}</h3><p>Volume: ${fmtNum(vol)} ${esc(rr.base.unit)}</p>${recipeTableHTML(rr, vol)}`;
+    }
+    n++;
+    let h = `<p><b>${n}.</b> ${esc(b.text || '')}</p>`;
+    const cols = colsOf(b);
+    if (b.type === 'table' && cols.length){
+      const rowsHtml = [...Array(Math.max(1, +b.rows || 1))].map((_, r) => `<tr>${cols.map((c, ci) => {
+        const cell = document.querySelector(`[data-tbl="${i}"][data-r="${r}"][data-c="${ci}"]`);
+        return `<td style="${td};height:22px">${esc(cell ? cell.value : '')}</td>`;
+      }).join('')}</tr>`).join('');
+      h += `<table style="border-collapse:collapse;width:100%;margin:4px 0 10px"><tr>${cols.map(c => `<th style="${td};text-align:left">${esc(c)}</th>`).join('')}</tr>${rowsHtml}</table>`;
+    }
+    return h;
+  }).join('');
+}
+
+function recipeEditorHTML(r, withSteps = true){
+  const cu = sel => ['M','mM','µM','nM','%','X'].map(u => `<option value="${u}" ${sel === u ? 'selected' : ''}>${u}</option>`).join('');
+  const rows = r.items.map((it, i) => `<div class="rcrow" data-rc-row="${i}">
+      <input data-rc="name" type="text" value="${esc(it.name || '')}" placeholder="Ingrediente o materiale">
+      <select data-rc="mode">
+        <option value="vol" ${(!it.mode || it.mode === 'vol') ? 'selected' : ''}>Cambia con il volume</option>
+        <option value="sample" ${it.mode === 'sample' ? 'selected' : ''}>Per campione</option>
+        <option value="fixed" ${it.mode === 'fixed' ? 'selected' : ''}>Fisso</option>
+        <option value="dil" ${it.mode === 'dil' ? 'selected' : ''}>Diluizione Ci·Vi = Cf·Vf</option>
+      </select>
+      <input data-rc="qty" type="number" step="any" value="${it.qty ?? ''}" placeholder="Quantità">
+      <input data-rc="unit" type="text" value="${esc(it.unit || '')}" placeholder="Unità">
+      <input data-rc="ci" type="number" step="any" value="${it.ci ?? ''}" placeholder="Ci (stock)">
+      <select data-rc="ciu">${cu(it.ciu || 'M')}</select>
+      <input data-rc="cf" type="number" step="any" value="${it.cf ?? ''}" placeholder="Cf (finale)">
+      <select data-rc="cfu">${cu(it.cfu || 'mM')}</select>
+      <button type="button" class="x trash" data-proto-act="rcdel" data-i="${i}" aria-label="Togli" title="Togli">✕</button>
+    </div>`).join('');
+  const stepRows = r.steps.map((st, i) => `<div class="rcrow" data-st="${i}">
+      <input data-st-f="text" type="text" value="${esc(st.text || '')}" placeholder="Passo, per esempio: caricare i campioni">
+      <label class="note" style="display:flex;gap:4px;align-items:center"><input data-st-f="tbl" type="checkbox" ${st.tbl ? 'checked' : ''}> Tabella</label>
+      <input data-st-f="cols" type="text" value="${esc(st.cols || '')}" placeholder="Colonne separate da virgola: Posizione, Campione, Ora">
+      <input data-st-f="rows" type="number" min="1" value="${st.rows || 1}" placeholder="Righe">
+      <button type="button" class="x trash" data-proto-act="stdel" data-i="${i}" aria-label="Togli passo" title="Togli passo">✕</button>
+    </div>`).join('');
+  const stepsEditor = `<div class="note" style="margin-top:6px">Passaggi (facoltativi). Se un passaggio ha una tabella, nel protocollo compili le righe.</div>
+    ${stepRows || ''}
+    <div><button type="button" class="btn" data-proto-act="stadd">+ Passo</button></div>`;
+  return `<fieldset style="border:1px solid var(--line);border-radius:10px;padding:10px;display:grid;gap:8px;min-width:0">
+    <legend class="note">Ricetta</legend>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <label class="note">Base (es. Volume) <input id="rcBaseLabel" type="text" value="${esc(r.base.label)}"></label>
+      <label class="note">Valore base <input id="rcBaseVal" type="number" step="any" value="${r.base.value}"></label>
+      <label class="note">Unità <input id="rcBaseUnit" type="text" value="${esc(r.base.unit)}"></label>
+    </div>
+    <label class="note" style="display:flex;gap:6px;align-items:center"><input id="rcSamples" type="checkbox" ${r.samples ? 'checked' : ''}> Ci sono campioni (il protocollo chiederà il numero)</label>
+    ${rows || '<div class="empty">Nessun ingrediente ancora.</div>'}
+    <div><button type="button" class="btn" data-proto-act="rcadd">+ Ingrediente</button></div>
+    <div class="note">Cambia con il volume: quantità proporzionale al valore base. Per campione: quantità × numero di campioni. Fisso: quantità uguale sempre. Diluizione: inserisci la concentrazione iniziale (Ci) e quella finale (Cf) con la stessa unità (M, mM, µM, nM, % oppure X). Il programma calcola da solo quanto stock serve sul volume finale con Ci·Vi = Cf·Vf, e l'H2O è il resto. Esempi: 10X → 1X; 10% → 2%.</div>
+    ${withSteps ? stepsEditor : ''}
+  </fieldset>`;
+}
+// legge dal form ciò che è scritto (senza salvare nel database)
+function syncDraft(p){
+  const t = $('protoTitleEd'); if (t) p.title = t.value.trim() || p.title;
+  const b = $('protoBody'); if (b) p.body = b.value;
+  if ($('rcBaseVal')){
+    const items = [...document.querySelectorAll('[data-rc-row]')].map(row => ({
+      name: row.querySelector('[data-rc="name"]').value.trim(),
+      qty: +row.querySelector('[data-rc="qty"]').value || 0,
+      unit: row.querySelector('[data-rc="unit"]').value.trim(),
+      mode: row.querySelector('[data-rc="mode"]').value,
+      ci: +row.querySelector('[data-rc="ci"]').value || 0,
+      ciu: row.querySelector('[data-rc="ciu"]').value,
+      cf: +row.querySelector('[data-rc="cf"]').value || 0,
+      cfu: row.querySelector('[data-rc="cfu"]').value
+    }));
+    const steps = [...document.querySelectorAll('[data-st]')].map(row => ({
+      text: row.querySelector('[data-st-f="text"]').value.trim(),
+      tbl: row.querySelector('[data-st-f="tbl"]').checked,
+      cols: row.querySelector('[data-st-f="cols"]').value.trim(),
+      rows: +row.querySelector('[data-st-f="rows"]').value || 1
+    }));
+    p.recipe = JSON.stringify({
+      base: {label: $('rcBaseLabel').value.trim() || 'Volume', value: +$('rcBaseVal').value || 1, unit: $('rcBaseUnit').value.trim() || 'ml'},
+      samples: $('rcSamples').checked,
+      items,
+      steps,
+      blocks: $('blkMenu') ? readBlocks() : undefined,
+      imports: [...document.querySelectorAll('[data-imp]')].map(row => ({
+        id: row.dataset.id,
+        vol: +row.querySelector('[data-impv]').value || 0
+      }))
+    });
+  }
+}
+// tabella delle quantità aggiornata mentre si cambia volume o campioni
+function refreshCalc(){
+  const p = protos.find(x => x.id === protoOpen); if (!p || !$('rcTarget')) return;
+  const r = recipeDefaults(parseRecipe(p.recipe));
+  const target = +$('rcTarget').value || r.base.value;
+  const n = r.samples ? (+($('rcN') && $('rcN').value) || 1) : 1;
+  const rows = calcItems(r, target, n).filter(c => c.name);
+  $('rcOut').innerHTML = rows.length ? `<table style="border-collapse:collapse;width:100%">${rows.map(c =>
+    `<tr><td style="border-bottom:1px solid var(--line);padding:5px 6px">${esc(c.name)}</td><td style="border-bottom:1px solid var(--line);padding:5px 6px;text-align:right;font-weight:650">${fmtNum(c.value)} ${esc(c.unit)}</td></tr>`).join('')}</table>` : '';
+}
+async function loadProtocols(){ await loadAll(); }
+let protoFrom = 'lab';   // dove tornare quando si chiudono i protocolli: 'lab' o 'cal'
+function openProto(){ protoFrom = view; view = 'proto'; protoOpen = null; render(); }
+async function protoNew(){
+  const title = $('protoTitle').value.trim();
+  if (!title){ flash('Scrivi il titolo del protocollo.'); return; }
+  const isRecipe = protoTab === 'recipes';
+  const row = {id: crypto.randomUUID(), group_id: null, calendar_id: curCal, kind: isRecipe ? 'recipe' : 'protocol',
+               title, body: '', recipe: isRecipe ? RECIPE_DEFAULT() : '', created_at: Date.now()};
+  protos.push(protoFromDb(row));
+  protoOpen = row.id; protoMode = 'edit'; render();
+  const {error} = await dbOp(curCal, 'protocols', 'insert', {data: row});
+  if (error){ flash('Protocollo non salvato, riprova.'); await loadProtocols(); render(); }
+}
+async function protoSave(){
+  const p = protos.find(x => x.id === protoOpen); if (!p) return;
+  const title = $('protoTitleEd').value.trim();
+  if (!title){ flash('Il titolo non può essere vuoto.'); return; }
+  syncDraft(p);
+  const rr = recipeDefaults(parseRecipe(p.recipe));
+  rr.items = rr.items.filter(i => i.name);
+  p.recipe = JSON.stringify(rr);
+  const {error} = await dbOp(curCal, 'protocols', 'update', {id: p.id, data: {title: p.title, body: p.body, recipe: p.recipe}});
+  if (error){ flash('Protocollo non salvato, riprova.'); await loadProtocols(); }
+  else flash('Protocollo salvato.');
+  render();
+}
+async function protoDelete(id){
+  const p = protos.find(x => x.id === id); if (!p) return;
+  if (!(await askConfirm(`Eliminare il protocollo “${p.title}”?`))) return;
+  protos = protos.filter(x => x.id !== id);
+  if (protoOpen === id) protoOpen = null;
+  render();
+  const {error} = await dbOp(curCal, 'protocols', 'delete', {id});
+  if (error){ flash('Eliminazione non riuscita.'); await loadProtocols(); render(); }
+}
+// stampa / PDF: sostituisce i campi con i valori e apre la finestra di stampa
+function printProtocol(title, body, values, extra = ''){
+  const filled = body.replace(/\{([^{}]+)\}/g, (m, k) => {
+    const v = values[k.trim()];
+    return v ? esc(v) : '______________';
+  });
+  const paras = filled.split('\n').map(l => l.trim() ? `<p>${l}</p>` : '<p>&nbsp;</p>').join('');
+  const html = `<!doctype html><html lang="it"><head><meta charset="utf-8"><title>${esc(title)}</title>
+    <style>body{font:14px/1.55 system-ui,sans-serif;margin:28px;color:#111}h1{font-size:20px;margin:0 0 14px}p{margin:6px 0}@page{margin:18mm}</style>
+    </head><body><h1>${esc(title)}</h1>${paras}${extra}</body></html>`;
+  const w = window.open('', '_blank');
+  if (!w){ flash('Il browser ha bloccato la finestra. Consenti i popup per questo sito.'); return; }
+  w.document.open(); w.document.write(html); w.document.close();
+  setTimeout(() => { try { w.focus(); w.print(); } catch(_) {} }, 300);
+}
+function protoHTML(){
+  const list = protos.filter(p => (p.kind === 'recipe') === (protoTab === 'recipes')).sort((a,b) => a.createdAt - b.createdAt);
+  if (!protoOpen){
+    const rows = list.map(p => `<div class="protorow">
+        <span class="ct">${esc(p.title)}</span>
+        <button type="button" class="btn sm" data-proto-act="use" data-id="${p.id}">Usa / PDF</button>
+        <button type="button" class="btn sm" data-proto-act="edit" data-id="${p.id}">Modifica</button>
+        <button type="button" class="x trash" data-proto-act="del" data-id="${p.id}" aria-label="Elimina" title="Elimina">🗑</button>
+      </div>`).join('');
+    return `<section class="panel" style="padding:12px">
+      <div style="display:flex;gap:6px;margin-bottom:10px">
+        <button type="button" class="btn ${protoTab === 'protocols' ? '' : ''}" data-ptab="protocols" aria-pressed="${protoTab === 'protocols'}">Protocolli</button>
+        <button type="button" class="btn" data-ptab="recipes" aria-pressed="${protoTab === 'recipes'}">Ricette dei reagenti</button>
+      </div>
+      <div class="note" style="margin-bottom:8px">${protoTab === 'recipes'
+        ? 'Ricette: volume finale e ingredienti con concentrazione stock e finale. Le quantità si ricalcolano dal volume, e l’acqua (H2O) è quella che serve per arrivare al volume.'
+        : 'Nel testo scrivi tra graffe i campi da compilare, per esempio {data} o {operatore}.'}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+        <input id="protoTitle" type="text" placeholder="Titolo del nuovo protocollo" maxlength="120" style="flex:1;min-width:160px;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:6px 8px;color:var(--fg)">
+        <button type="button" class="btn" id="protoNew">${protoTab === 'recipes' ? '+ Ricetta' : '+ Protocollo'}</button>
+      </div>
+      ${rows || '<div class="empty">Nessun protocollo ancora.</div>'}
+    </section>`;
+  }
+  const p = protos.find(x => x.id === protoOpen);
+  if (!p) return `<div class="empty" style="padding:24px">Protocollo non trovato.</div>`;
+  if (protoMode === 'edit' && p.kind === 'recipe'){
+    return `<section class="panel" style="padding:12px;display:grid;gap:8px">
+      <label class="note">Nome della ricetta <input id="protoTitleEd" type="text" value="${esc(p.title)}" maxlength="120" style="width:100%"></label>
+      ${recipeEditorHTML(recipeDefaults(parseRecipe(p.recipe)), false)}
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button type="button" class="btn" id="protoSave">Salva</button>
+        <button type="button" class="btn" data-proto-act="use" data-id="${p.id}">Calcola</button>
+        <button type="button" class="btn" id="protoClose">Chiudi</button>
+      </div>
+    </section>`;
+  }
+  if (protoMode === 'edit'){
+    return `<section class="panel" style="padding:12px;display:grid;gap:8px">
+      <label class="note">Titolo <input id="protoTitleEd" type="text" value="${esc(p.title)}" maxlength="120" style="width:100%"></label>
+      ${recipeEditorHTML(recipeDefaults(parseRecipe(p.recipe)), false)}
+      ${blocksEditorHTML(recipeDefaults(parseRecipe(p.recipe)))}
+      <label class="note">Testo del protocollo (i campi da compilare sono tra graffe, per esempio {data})
+        <textarea id="protoBody" rows="16" style="width:100%;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px;color:var(--fg)">${esc(p.body)}</textarea></label>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button type="button" class="btn" id="protoSave">Salva</button>
+        <button type="button" class="btn" data-proto-act="use" data-id="${p.id}">Usa / PDF</button>
+        <button type="button" class="btn" id="protoClose">Chiudi</button>
+      </div>
+    </section>`;
+  }
+  const rc = recipeDefaults(parseRecipe(p.recipe));
+  const keys = [...new Set([...p.body.matchAll(/\{([^{}]+)\}/g)].map(m => m[1].trim()))];
+  return `<section class="panel" style="padding:12px;display:grid;gap:10px">
+    <h2 style="margin:0;font-size:15px">${esc(p.title)}</h2>
+    ${(rc.items.length || rc.imports.length) ? `<div style="display:flex;gap:10px;flex-wrap:wrap">
+        <label class="note">${esc(rc.base.label)} (${esc(rc.base.unit)}) <input id="rcTarget" type="number" step="any" value="${rc.base.value}" style="width:140px"></label>
+        ${rc.samples ? `<label class="note">Campioni <input id="rcN" type="number" min="1" step="1" value="1" style="width:110px"></label>` : ''}
+      </div><div id="rcOut"></div>` : ''}
+    ${keys.length
+      ? keys.map(k => `<label class="note">${esc(k)} <input data-ph="${esc(k)}" type="text" style="width:100%"></label>`).join('')
+      : (p.kind === 'recipe' ? '' : '<div class="note">Nessun campo da compilare: il protocollo è pronto.</div>')}
+    ${blocksFillHTML(rc)}
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button type="button" class="btn" id="protoPrint">Stampa / PDF</button>
+      <button type="button" class="btn" id="protoClose">Chiudi</button>
+    </div>
+  </section>`;
+}
+
+function flash(msg){
+  const el = $('status');
+  el.textContent = msg;
+  clearTimeout(statusTimer);
+  statusTimer = setTimeout(() => { el.textContent = ''; }, 5000);
+}
+
+// ---- PIN ricordati su questo dispositivo: {id calendario: pin} ----
+// Il PIN non viene mai letto dal database: il database lo verifica soltanto.
+const PIN_KEY = 'pinmap';
+function pinMap(){
+  try { return JSON.parse(localStorage.getItem(PIN_KEY) || '{}'); } catch(_) { return {}; }
+}
+function setPin(cal, pin){
+  const m = pinMap(); m[cal] = pin;
+  localStorage.setItem(PIN_KEY, JSON.stringify(m));
+}
+function dropPin(cal){
+  const m = pinMap(); delete m[cal];
+  localStorage.setItem(PIN_KEY, JSON.stringify(m));
+}
+const pinFor = cal => pinMap()[cal] || null;
+const isProt = cal => { const c = calById(cal); return !!(c && c.protected); };
+
+// ---- calendari e gruppi: letture ----
+const calById = id => calendars.find(c => c.id === id);
+const calFromDb = r => ({id:r.id, name:r.name, position:r.position || 0, hidden:!!r.hidden, protected:!!r.protected, groupId:r.group_id || null});
+const grpById = id => groups.find(g => g.id === id);
+const grpFromDb = r => ({id:r.id, name:r.name, parentId:r.parent_id || null, position:r.position || 0});
+const byName = (a,b) => a.name.localeCompare(b.name, 'it');
+function grpPath(id){
+  const parts = []; let g = grpById(id);
+  while (g){ parts.unshift(g.name); g = g.parentId ? grpById(g.parentId) : null; }
+  return parts.join(' › ');
+}
+function labName(id){ return id === 'none' ? 'Senza laboratorio' : (grpPath(id) || 'Laboratorio'); }
+const isVis = () => true;   // i calendari in lista sono già quelli che questo dispositivo può vedere
+function countCals(gid){
+  const kids = groups.filter(g => g.parentId === gid).map(g => g.id);
+  return calendars.filter(c => c.groupId === gid).length + kids.reduce((n,k) => n + countCals(k), 0);
+}
+function groupShows(g){
+  const hasAny = gid => calendars.some(c => c.groupId === gid) || groups.some(x => x.parentId === gid && hasAny(x.id));
+  return !hasAny(g.id) || countCals(g.id) > 0;
+}
+const lockLabel = c => c.protected ? '🔒 ' : '';
+
+// legge calendari pubblici e, per ogni PIN ricordato, quelli protetti corrispondenti
+async function loadCalendars(){
+  const [c, g] = await Promise.all([
+    sb.from('calendars').select('*').order('position', {ascending:true}),
+    sb.from('groups').select('*').order('position', {ascending:true})
+  ]);
+  if (c.error || g.error){ flash('Non riesco a leggere i calendari. Hai eseguito i codici SQL su Supabase?'); return false; }
+  const map = new Map(c.data.map(r => [r.id, calFromDb(r)]));
+  const pins = [...new Set(Object.values(pinMap()))];
+  for (const p of pins){
+    const {data, error} = await sb.rpc('protected_list', {p_pin: p});
+    if (!error && data) data.forEach(r => map.set(r.id, calFromDb(r)));
+  }
+  calendars = [...map.values()].sort((a,b) => a.position - b.position);
+  groups = g.data.map(grpFromDb);
+  return true;
+}
+
+// ---- accesso ai dati: calendari protetti tramite funzioni con PIN, gli altri in modo diretto ----
+async function dbSelect(table, cal){
+  if (isProt(cal)){
+    const {data, error} = await sb.rpc('protected_op', {p_pin: pinFor(cal), p_cal: cal, p_op:'select', p_table: table});
+    return {data: error ? null : data, error};
+  }
+  let q = sb.from(table).select('*').eq('calendar_id', cal);
+  if (table === 'categories') q = q.order('position', {ascending:true});
+  if (table === 'bookings') q = q.order('created_at', {ascending:true});
+  return q;
+}
+function dbOp(cal, table, op, {id, data} = {}){
+  if (isProt(cal)){
+    return sb.rpc('protected_op', {p_pin: pinFor(cal), p_cal: cal, p_op: op, p_table: table, p_id: id || null, p_data: data || null});
+  }
+  if (op === 'insert') return sb.from(table).insert(data);
+  if (op === 'update') return sb.from(table).update(data).eq('id', id);
+  if (op === 'delete') return sb.from(table).delete().eq('id', id).eq('calendar_id', cal);
+  if (op === 'clear')  return sb.from(table).delete().eq('calendar_id', cal);
+}
+function pinError(error){
+  if (error && /PIN/i.test(error.message || '')){
+    flash('PIN non più valido: premi Esci e riapri il calendario.');
+    return true;
+  }
+  return false;
+}
+
+// ---- apertura e navigazione ----
+async function selectCalendar(id){
+  const c = calById(id); if (!c) return;
+  if (c.protected && !pinFor(id)){
+    const v = prompt(`PIN per il calendario “${c.name}”:`);
+    if (v === null) return;
+    const {data, error} = await sb.rpc('protected_check', {p_pin: v.trim(), p_cal: id});
+    if (error || !data){ flash('PIN errato.'); return; }
+    setPin(id, v.trim());
+    await loadCalendars();
+  }
+  curCal = id;
+  adminCal = null;
+  curLab = (calById(id) || {}).groupId || 'none';
+  view = 'cal';
+  selectedId = null;
+  expandedDays = new Set();
+  history.replaceState(null, '', '?cal=' + encodeURIComponent(slug(calById(id).name)));
+  await loadAll();
+}
+function openLab(id){ curLab = id; view = 'lab'; render(); }
+function goBack(){
+  if (view === 'cal'){ view = 'lab'; }
+  else if (view === 'proto'){ view = protoFrom || 'lab'; protoOpen = null; }
+  else if (view === 'lab'){
+    const g = curLab && curLab !== 'none' ? grpById(curLab) : null;
+    if (g && g.parentId){ curLab = g.parentId; }
+    else { view = 'home'; curLab = null; }
+  }
+  render();
+}
+// "Area privata": chiede il PIN e mostra i calendari che hanno quel PIN
+async function openPrivate(){
+  const pin = prompt('PIN dell’area privata:');
+  if (pin === null) return;
+  const p = pin.trim();
+  const {data, error} = await sb.rpc('protected_list', {p_pin: p});
+  if (error || !data || !data.length){ flash('PIN non valido.'); return; }
+  data.forEach(r => setPin(r.id, p));
+  await loadCalendars();
+  view = 'home'; render();
+  flash(`Calendari sbloccati: ${data.length}.`);
+}
+// "Esci": dimentica tutti i PIN su questo dispositivo
+async function lockAll(){
+  closeSettings();
+  localStorage.removeItem(PIN_KEY);
+  curCal = null; view = 'home'; selectedId = null;
+  await loadCalendars();
+  flash('Uscito: i PIN verranno chiesti di nuovo.');
+  render();
+}
+
+// ---- creazione ----
+async function newCalendar(){
+  const name = (prompt('Nome del nuovo calendario:') || '').trim();
+  if (!name) return;
+  if (calendars.some(c => slug(c.name) === slug(name))){ flash('Esiste già un calendario con questo nome.'); return; }
+  const pin = (prompt('PIN (lascia vuoto per nessuno):') || '').trim() || null;
+  const groupId = curLab && curLab !== 'none' ? curLab : null;
+  let id = crypto.randomUUID();
+  if (pin){
+    const {error} = await sb.rpc('create_protected_calendar', {p_id: id, p_name: name, p_group: groupId, p_pin: pin, p_hidden: false});
+    if (error){ flash('Calendario non creato: ' + error.message); return; }
+    setPin(id, pin);
+  } else {
+    const row = {id, name, code: null, position: calendars.length + 1, group_id: groupId};
+    const {error} = await sb.from('calendars').insert(row);
+    if (error){ flash('Calendario non salvato, riprova.'); return; }
+  }
+  await loadCalendars();
+  await selectCalendar(id);
+}
+async function newGroup(parentId){
+  const parent = parentId ? grpById(parentId) : null;
+  const name = (prompt(parent ? `Nome del nuovo gruppo dentro “${parent.name}”:` : 'Nome del nuovo laboratorio o gruppo:') || '').trim();
+  if (!name) return;
+  if (groups.some(g => g.parentId === (parentId || null) && slug(g.name) === slug(name))){ flash('Esiste già un gruppo con questo nome lì.'); return; }
+  const row = {id: crypto.randomUUID(), name, parent_id: parentId || null, position: groups.length + 1};
+  groups.push(grpFromDb(row)); render();
+  const {error} = await sb.from('groups').insert(row);
+  if (error){ flash('Gruppo non salvato, riprova.'); await loadCalendars(); render(); }
+}
+
+// ---- impostazioni (popup) ----
+async function openSettings(){
+  if (!curCal) return;
+  $('modal').hidden = false;
+  fillSettings();
+  await refreshAdmin();
+}
+// ---- ruoli: admin e membri ----
+let adminCal = null;   // calendario per cui questo dispositivo ha il PIN admin
+const isAdminNow = () => adminCal !== null && adminCal === curCal;
+let adminInfo = {cal: null, has: false};   // il calendario ha già un admin?
+async function refreshAdmin(){
+  const c = calById(curCal);
+  adminCal = null;
+  adminInfo = {cal: null, has: false};
+  if (c && c.protected){
+    const {data: h} = await sb.rpc('calendar_has_admin', {p_cal: c.id});
+    adminInfo = {cal: c.id, has: !!h};
+  }
+  if (c && c.protected && pinFor(c.id)){
+    const {data} = await sb.rpc('protected_is_admin', {p_pin: pinFor(c.id), p_cal: c.id});
+    if (data) adminCal = c.id;
+  }
+  renderSettings();
+}
+async function asAdmin(){
+  const c = calById(curCal); if (!c) return;
+  const v = prompt(`PIN admin di “${c.name}”:`); if (!v) return;
+  const {data} = await sb.rpc('protected_is_admin', {p_pin: v.trim(), p_cal: c.id});
+  if (!data){ flash('PIN admin non valido.'); return; }
+  setPin(c.id, v.trim());
+  await loadCalendars();
+  await refreshAdmin();
+  flash('Sei admin di questo calendario su questo dispositivo.');
+}
+async function saveAdminPin(){
+  const c = calById(curCal); if (!c) return;
+  const v = $('setAdmin').value.trim();
+  if (!v){ flash('Scrivi il nuovo PIN admin.'); return; }
+  if (!c.protected){ flash('Prima imposta un PIN membri.'); return; }
+  const {error} = await sb.rpc('protected_set_admin', {p_pin: pinFor(c.id), p_cal: c.id, p_newadmin: v});
+  if (error){ if (!pinError(error)) flash('PIN admin non salvato: ' + error.message); return; }
+  $('setAdmin').value = '';
+  flash('PIN admin salvato.');
+  await refreshAdmin();
+}
+function closeSettings(){ $('modal').hidden = true; }
+function fillSettings(){
+  const c = calById(curCal); if (!c) return;
+  $('setName').value = c.name;
+  $('setCode').value = '';
+  $('setCode').placeholder = c.protected ? 'Nuovo PIN (vuoto = togli il PIN)' : 'PIN (vuoto = nessun PIN)';
+}
+async function saveName(){
+  const c = calById(curCal); if (!c) return;
+  const name = $('setName').value.trim();
+  if (!name){ flash('Il nome non può essere vuoto.'); return; }
+  if (calendars.some(x => x.id !== c.id && slug(x.name) === slug(name))){ flash('Esiste già un calendario con questo nome.'); return; }
+  const {error} = await dbOp(c.id, 'calendars', 'update', {id: c.id, data: {name}});
+  if (error){ if (!pinError(error)) flash('Nome non salvato.'); }
+  else flash('Nome salvato.');
+  await loadCalendars(); render();
+}
+// cambia, aggiunge o toglie il PIN
+async function saveCode(){
+  const c = calById(curCal); if (!c) return;
+  const pin = $('setCode').value.trim() || null;
+  if (c.protected){
+    if (!isAdminNow()){ flash('Per cambiare il PIN serve il PIN admin.'); return; }
+    if (!pin){ flash('Il PIN membri non può essere vuoto.'); return; }
+    const {error} = await sb.rpc('protected_set_pin', {p_pin: pinFor(c.id), p_cal: c.id, p_newpin: pin});
+    if (error){ if (!pinError(error)) flash('PIN non salvato: ' + error.message); return; }
+    flash('PIN membri cambiato. Gli altri dispositivi dovranno reinserirlo.');
+  } else if (pin){
+    const {error} = await sb.rpc('calendar_add_pin', {p_cal: c.id, p_newpin: pin});
+    if (error){ flash('PIN non salvato: ' + error.message); return; }
+    setPin(c.id, pin);
+    flash('PIN salvato.');
+  } else {
+    flash('Non c’è nessun PIN da togliere.');
+  }
+  await loadCalendars(); render();
+}
+// rendere privato e nascosto: solo per calendari con PIN
+async function saveHidden(on){
+  const c = calById(curCal); if (!c) return;
+  if (on && !c.protected){ flash('Per rendere privato il calendario serve prima un PIN.'); $('setHidden').checked = false; return; }
+  const {error} = await dbOp(c.id, 'calendars', 'update', {id: c.id, data: {hidden: on}});
+  if (error){ if (!pinError(error)) flash('Impostazione non salvata.'); }
+  else flash(on ? 'Calendario privato: non compare più nell’elenco.' : 'Calendario di nuovo visibile.');
+  await loadCalendars(); render();
+}
+async function setCalGroup(gid){
+  const c = calById(curCal); if (!c) return;
+  const {error} = await dbOp(c.id, 'calendars', 'update', {id: c.id, data: {group_id: gid || null}});
+  if (error){ if (!pinError(error)) flash('Gruppo non salvato.'); }
+  else flash('Gruppo salvato.');
+  await loadCalendars(); render();
+}
+async function deleteCalendar(){
+  const c = calById(curCal); if (!c) return;
+  if (c.id === MAIN_ID){ flash('Il calendario Principale non si può eliminare.'); return; }
+  if (!(await askConfirm(`Eliminare “${c.name}”?\nSi perdono tutte le sue attività, categorie e strumentazioni. Non si può annullare.`))) return;
+  let error;
+  if (c.protected){
+    if (!isAdminNow()){ flash('Solo gli admin possono eliminare il calendario.'); return; }
+    ({error} = await sb.rpc('protected_delete_calendar', {p_pin: pinFor(c.id), p_cal: c.id}));
+  } else {
+    await dbOp(c.id, 'tasks', 'clear');
+    await dbOp(c.id, 'categories', 'clear');
+    await dbOp(c.id, 'bookings', 'clear');
+    ({error} = await dbOp(c.id, 'calendars', 'delete', {id: c.id}));
+  }
+  if (error){ flash('Eliminazione non riuscita: ' + error.message); return; }
+  dropPin(c.id);
+  closeSettings();
+  curCal = null; view = 'home';
+  await loadCalendars(); render();
+}
+
+// ---- gruppi nelle impostazioni ----
+async function addGroupFromSettings(){
+  const name = $('grpName').value.trim();
+  if (!name){ flash('Scrivi il nome del gruppo.'); return; }
+  const parent = $('grpParent').value || null;
+  if (groups.some(g => g.parentId === parent && slug(g.name) === slug(name))){ flash('Esiste già un gruppo con questo nome lì.'); return; }
+  const row = {id: crypto.randomUUID(), name, parent_id: parent, position: groups.length + 1};
+  groups.push(grpFromDb(row));
+  $('grpName').value = '';
+  render();
+  const {error} = await sb.from('groups').insert(row);
+  if (error){ flash('Gruppo non salvato, riprova.'); await loadCalendars(); render(); }
+  else flash('Gruppo creato.');
+}
+async function renameGroup(){
+  const id = $('grpSel').value; const g = grpById(id); if (!g) return;
+  const name = (prompt('Nuovo nome del gruppo:', g.name) || '').trim();
+  if (!name) return;
+  const {error} = await sb.from('groups').update({name}).eq('id', id);
+  if (error) flash('Nome non salvato.');
+  await loadCalendars(); render();
+}
+async function deleteGroup(){
+  const id = $('grpSel').value; const g = grpById(id); if (!g) return;
+  if (groups.some(x => x.parentId === id) || calendars.some(c => c.groupId === id)){
+    flash('Il gruppo non è vuoto: sposta prima i suoi calendari e sottogruppi.'); return;
+  }
+  if (!(await askConfirm(`Eliminare il gruppo “${grpPath(id)}”?`))) return;
+  const {error} = await sb.from('groups').delete().eq('id', id);
+  if (error) flash('Eliminazione non riuscita.');
+  await loadCalendars(); render();
+}
+
+// ---- conferma al centro dello schermo (al posto di confirm del browser) ----
+let askResolve = null;
+function askConfirm(msg, okLabel = 'Elimina'){
+  return new Promise(res => {
+    $('askText').textContent = msg;
+    $('askOk').textContent = okLabel;
+    askResolve = res;
+    $('askModal').hidden = false;
+    $('askOk').focus();
+  });
+}
+function closeAsk(v){
+  $('askModal').hidden = true;
+  if (askResolve){ const r = askResolve; askResolve = null; r(v); }
+}
+
+// ---- link personale: entra nel calendario senza PIN ----
+async function makeLink(){
+  const c = calById(curCal); if (!c) return;
+  if (!c.protected){ flash('Il link personale serve solo per i calendari con PIN.'); return; }
+  if (!isAdminNow()){ flash('Solo gli admin possono creare link.'); return; }
+  const {data, error} = await sb.rpc('create_calendar_token', {p_pin: pinFor(c.id), p_cal: c.id});
+  if (error || !data){ if (!pinError(error)) flash('Link non creato.'); return; }
+  const url = `${location.origin}${location.pathname}?cal=${encodeURIComponent(slug(c.name))}&k=${data}`;
+  $('linkOut').value = url;
+  try { await navigator.clipboard.writeText(url); flash('Link creato e copiato. Chi lo ha entra senza PIN.'); }
+  catch(_) { flash('Link creato: copialo dal campo qui sotto.'); }
+}
+async function revokeLinks(){
+  const c = calById(curCal); if (!c || !c.protected) return;
+  if (!isAdminNow()){ flash('Solo gli admin possono revocare i link.'); return; }
+  if (!(await askConfirm('Revocare tutti i link personali di questo calendario?\nQuelli già dati smetteranno di funzionare.', 'Revoca'))) return;
+  const {error} = await sb.rpc('revoke_calendar_tokens', {p_pin: pinFor(c.id), p_cal: c.id});
+  if (error){ if (!pinError(error)) flash('Revoca non riuscita.'); return; }
+  $('linkOut').value = '';
+  flash('Link revocati.');
+}
+
+// ---- sfondo: per calendario, su questo dispositivo ----
+const bgKey = () => 'bg:' + curCal;
+function getBg(){
+  try { return JSON.parse(localStorage.getItem(bgKey()) || 'null'); } catch(_) { return null; }
+}
+function applyBg(){
+  const b = curCal && view === 'cal' ? getBg() : null;
+  const s = document.body.style;
+  s.backgroundColor = ''; s.backgroundImage = ''; s.backgroundSize = ''; s.backgroundPosition = ''; s.backgroundAttachment = '';
+  if (b && b.type === 'color'){ s.backgroundColor = b.value; }
+  else if (!b && !window.matchMedia('(prefers-color-scheme: dark)').matches){ s.backgroundColor = DEFAULT_BG; }
+  if (b && b.type === 'image'){
+    s.backgroundImage = `url("${b.value}")`;
+    s.backgroundSize = 'cover'; s.backgroundPosition = 'center'; s.backgroundAttachment = 'fixed';
+  }
+  document.body.classList.toggle('hasimg', !!(b && b.type === 'image'));
+}
+function setBg(b){
+  if (!curCal) return;
+  if (b) localStorage.setItem(bgKey(), JSON.stringify(b));
+  else localStorage.removeItem(bgKey());
+  applyBg();
+}
+function setBgImage(){
+  const url = $('bgUrl').value.trim();
+  if (!/^https:\/\/[^"'()\s]+$/.test(url)){ flash('Inserisci un indirizzo che inizia con https://'); return; }
+  setBg({type:'image', value:url});
+}
+
+// ---- dati del calendario aperto ----
+function taskFromDb(r){
+  let slot = r.slot || null;
+  if (LEGACY_SLOT[slot]) slot = LEGACY_SLOT[slot];
+  return {id:r.id, title:r.title, day:r.day, slot, done:!!r.done, category:r.category||null, kind:r.kind||null, createdAt:r.created_at||0};
+}
+function catFromDb(r){ return {id:r.id, name:r.name, color:r.color, position:r.position||0}; }
+function bkFromDb(r){ return {id:r.id, title:r.title, day:r.day||null, useDay:r.use_day||null, slot:r.slot||null, done:!!r.done, details:r.details||'', createdAt:r.created_at||0}; }
+
+async function loadAll(){
+  if (!curCal){ tasks = []; categories = []; bookings = []; render(); return; }
+  const [t, c, b, pr] = await Promise.all([
+    dbSelect('tasks', curCal),
+    dbSelect('categories', curCal),
+    dbSelect('bookings', curCal),
+    dbSelect('protocols', curCal)
+  ]);
+  protos = pr.error ? [] : (pr.data || []).map(protoFromDb);
+  if (t.error || c.error){
+    if (!pinError(t.error || c.error)) flash('Non riesco a caricare i dati. Ricarica la pagina.');
+    return;
+  }
+  tasks = (t.data || []).map(taskFromDb);
+  categories = (c.data || []).map(catFromDb);
+  bookings = b.error ? [] : (b.data || []).map(bkFromDb);
+  render();
+}
+const catById = id => categories.find(c => c.id === id);
+const colorOf = t => { if (t.kind === 'booking') return null; const c = t.category ? catById(t.category) : null; return c ? c.color : null; };
+const taskById = id => tasks.find(x => x.id === id);
+
+async function saveChange(id, patch){
+  const t = taskById(id); if (!t) return;
+  Object.assign(t, patch);
+  render();
+  const dbPatch = {};
+  for (const k of ['title','done','day','slot','category']) if (k in patch) dbPatch[k] = patch[k];
+  const {error} = await dbOp(curCal, 'tasks', 'update', {id, data: dbPatch});
+  if (error){ if (!pinError(error)) flash('Modifica non salvata, riprova.'); loadAll(); }
+}
+async function addTask(title, category){
+  title = title.trim(); if (!title || !curCal) return;
+  const row = {id: crypto.randomUUID(), title, day:null, slot:null, done:false, category: category || null,
+               created_at: Date.now(), calendar_id: curCal};
+  tasks.push(taskFromDb(row)); render();
+  const {error} = await dbOp(curCal, 'tasks', 'insert', {data: row});
+  if (error){ if (!pinError(error)) flash('Attività non salvata, riprova.'); loadAll(); }
+}
+async function removeTask(id){
+  tasks = tasks.filter(t => t.id !== id); if (selectedId === id) selectedId = null; render();
+  const {error} = await dbOp(curCal, 'tasks', 'delete', {id});
+  if (error){ if (!pinError(error)) flash('Eliminazione non riuscita, riprova.'); loadAll(); }
+}
+function move(id, day, slot){
+  selectedId = null;
+  saveChange(id, {day: day || null, slot: slot || null});
+}
+function dropOnTime(id, day, min){
+  const t = taskById(id); if (!t) return;
+  const r = parseSlot(t.slot);
+  const dur = r ? r.to - r.from : 60;
+  const from = Math.min(min, T1 - dur);
+  move(id, day, encRange(from, from + dur));
+}
+function selectTask(id){
+  selectedId = (selectedId === id) ? null : id;
+  render();
+}
+
+// ---- cose da prenotare ----
+function bkSlot(from, to){
+  if (!from) return null;
+  const f = toMin(from);
+  const t = to && toMin(to) > f ? toMin(to) : f + 60;
+  return encRange(f, t);
+}
+// data dalla combinazione di giorno del mese (1-31) e giorno della settimana: prossima occorrenza da oggi
+function nextDate(num, wd){
+  const wdN = (wd === '' || wd === null || wd === undefined) ? null : +wd;
+  if (!num && wdN === null) return null;
+  const base = new Date(); base.setHours(0,0,0,0);
+  for (let i = 0; i < 400; i++){
+    const d = addDays(base, i);
+    if (num && d.getDate() !== num) continue;
+    if (wdN !== null && d.getDay() !== wdN) continue;
+    return fmt(d);
+  }
+  return null;
+}
+function dateFromFields(numEl, wdEl){
+  const num = numEl.value ? parseInt(numEl.value, 10) : null;
+  if (num && (num < 1 || num > 31)){ flash('Il giorno del mese va da 1 a 31.'); return undefined; }
+  if (!num && wdEl.value === '') return null;
+  const d = nextDate(num, wdEl.value);
+  if (!d) flash('Nessuna data trovata per questa combinazione.');
+  return d;
+}
+// data del giorno della settimana scelto, nella settimana che stai guardando (lunedì = primo giorno)
+let bkDateManual = false;   // true se la data è stata cambiata a mano: non viene più ricalcolata
+function weekdayDate(wd){
+  if (wd === '' || wd === null || wd === undefined) return '';
+  const idx = (+wd + 6) % 7;
+  return fmt(addDays(mondayOf(cursor), idx));
+}
+async function addBooking(){
+  const title = $('bkTitle').value.trim();
+  if (!title){ flash('Scrivi cosa va prenotato.'); return; }
+  const day = $('bkDate').value || null;
+  const useDay = $('bkUseDate').value || null;
+  const row = {id: crypto.randomUUID(), calendar_id: curCal, title, day, use_day: useDay, slot: null, done:false, details:'', created_at: Date.now()};
+  bookings.push(bkFromDb(row));
+  $('bkTitle').value = ''; $('bkWeekday').value = ''; $('bkDate').value = ''; bkDateManual = false;
+  $('bkUseWeekday').value = ''; $('bkUseDate').value = '';
+  render();
+  const {error} = await dbOp(curCal, 'bookings', 'insert', {data: row});
+  if (error){ if (!pinError(error)) flash('Prenotazione non salvata, riprova.'); loadAll(); }
+  else if (day){ copyBooking(row.id, day, null); }
+}
+// copia di una prenotazione nel calendario: la prenotazione resta in lista
+async function copyBooking(id, day, slot){
+  const b = bookings.find(x => x.id === id); if (!b || !curCal) return;
+  const row = {id: crypto.randomUUID(), title: 'Prenotare: ' + b.title, day: day || null, slot: slot || null, done:false,
+               category: null, kind: 'booking', created_at: Date.now(), calendar_id: curCal};
+  tasks.push(taskFromDb(row)); render();
+  const {error} = await dbOp(curCal, 'tasks', 'insert', {data: row});
+  if (error){ if (!pinError(error)) flash('Copia non riuscita, riprova.'); loadAll(); }
+  else flash(day ? 'Copia messa nel calendario. La prenotazione resta in lista.' : 'Copia messa in “Da organizzare”.');
+}
+// trascinamento di una prenotazione su una zona del calendario: crea una copia
+function dropBooking(zone, clientY, bid){
+  if (zone.dataset.drop === 'list') return;
+  const day = zone.dataset.day;
+  if (zone.hasAttribute('data-tl')){
+    const rect = zone.getBoundingClientRect();
+    const from = Math.min(minFromY(clientY - rect.top), T1 - 60);
+    copyBooking(bid, day, encRange(from, from + 60));
+  } else {
+    const b = bookings.find(x => x.id === bid);
+    copyBooking(bid, day, b ? b.slot : null);
+  }
+}
+// dettagli della prenotazione, in un popup
+let bkEditId = null;
+function openBkDetails(id){
+  const b = bookings.find(x => x.id === id); if (!b) return;
+  bkEditId = id;
+  $('bkDetTitle').textContent = b.title;
+  $('bkDetWeekday').value = b.day ? String(new Date(b.day + 'T00:00').getDay()) : '';
+  $('bkDetDate').value = b.day || '';
+  $('bkDetUseWeekday').value = b.useDay ? String(new Date(b.useDay + 'T00:00').getDay()) : '';
+  $('bkDetUseDate').value = b.useDay || '';
+  const r = parseSlot(b.slot);
+  $('bkDetFrom').value = r ? HM(r.from) : '';
+  $('bkDetTo').value = r ? HM(r.to) : '';
+  $('bkDetails').value = b.details || '';
+  $('bkModal').hidden = false;
+}
+function closeBkDetails(){ $('bkModal').hidden = true; bkEditId = null; }
+async function saveBkDetails(){
+  const b = bookings.find(x => x.id === bkEditId); if (!b) return;
+  const day = $('bkDetDate').value || null;
+  const f = $('bkDetFrom').value, t = $('bkDetTo').value;
+  const slot = day && f ? bkSlot(f, t) : null;
+  const details = $('bkDetails').value.replace(/\s+$/, '');
+  closeBkDetails();
+  await saveBooking(b.id, {day, slot, details, useDay: $('bkDetUseDate').value || null});
+  flash('Dettagli salvati.');
+}
+async function saveBooking(id, patch){
+  const b = bookings.find(x => x.id === id); if (!b) return;
+  Object.assign(b, patch);
+  render();
+  const dbPatch = {};
+  for (const k of ['title','done','day','slot','details']) if (k in patch) dbPatch[k] = patch[k];
+  if ('useDay' in patch) dbPatch.use_day = patch.useDay;
+  const {error} = await dbOp(curCal, 'bookings', 'update', {id, data: dbPatch});
+  if (error){ if (!pinError(error)) flash('Modifica non salvata, riprova.'); loadAll(); }
+}
+async function removeBooking(id){
+  bookings = bookings.filter(x => x.id !== id); render();
+  const {error} = await dbOp(curCal, 'bookings', 'delete', {id});
+  if (error){ if (!pinError(error)) flash('Eliminazione non riuscita, riprova.'); loadAll(); }
+}
+
+
+// ---- categorie (nelle impostazioni) ----
+async function addCategory(name, color){
+  name = name.trim(); if (!name || !curCal) return;
+  const row = {id: crypto.randomUUID(), name, color: color || '#c2457a', position: categories.length + 1, calendar_id: curCal};
+  categories.push(catFromDb(row)); render();
+  const {error} = await dbOp(curCal, 'categories', 'insert', {data: row});
+  if (error){ if (!pinError(error)) flash('Categoria non salvata, riprova.'); loadAll(); }
+}
+async function updateCategory(id, patch){
+  const c = catById(id); if (!c) return;
+  Object.assign(c, patch); render();
+  const dbPatch = {};
+  if ('name' in patch) dbPatch.name = patch.name;
+  if ('color' in patch) dbPatch.color = patch.color;
+  const {error} = await dbOp(curCal, 'categories', 'update', {id, data: dbPatch});
+  if (error){ if (!pinError(error)) flash('Modifica categoria non salvata.'); loadAll(); }
+}
+async function renameCategory(){
+  const c = catById($('catSel').value); if (!c) return;
+  const name = (prompt('Nuovo nome della categoria:', c.name) || '').trim();
+  if (name) updateCategory(c.id, {name});
+}
+async function removeCategory(){
+  const c = catById($('catSel').value); if (!c) return;
+  if (!(await askConfirm(`Eliminare la categoria “${c.name}”?\nLe attività resteranno senza categoria.`))) return;
+  tasks.forEach(t => { if (t.category === c.id) t.category = null; });
+  categories = categories.filter(x => x.id !== c.id); render();
+  const {error} = await dbOp(curCal, 'categories', 'delete', {id: c.id});
+  if (error){ if (!pinError(error)) flash('Eliminazione categoria non riuscita.'); loadAll(); }
+}
+
+// ---- rendering: home e laboratori ----
+const card = (id, name, n) => `<button type="button" class="card" data-lab="${id}">
+  <strong>${esc(name)}</strong><span class="note">${n} calendar${n===1?'io':'i'}</span></button>`;
+
+function homeHTML(){
+  const tops = groups.filter(g => !g.parentId).sort(byName).filter(groupShows);
+  const cards = tops.map(g => card(g.id, g.name, countCals(g.id)));
+  const noneN = calendars.filter(c => !c.groupId && isVis(c)).length;
+  if (noneN) cards.push(card('none', 'Senza laboratorio', noneN));
+  return cards.length
+    ? `<div class="cards">${cards.join('')}</div>`
+    : `<div class="empty" style="padding:24px">Nessun laboratorio ancora. Crealo con “+ Laboratorio”.</div>`;
+}
+function labHTML(){
+  const isNone = curLab === 'none';
+  const subs = isNone ? [] : groups.filter(g => g.parentId === curLab).sort(byName).filter(groupShows);
+  const cals = calendars.filter(c => (isNone ? !c.groupId : c.groupId === curLab) && isVis(c));
+  return `${subs.length ? `<div class="sub">Gruppi</div><div class="cards">${subs.map(g => card(g.id, g.name, countCals(g.id))).join('')}</div>` : ''}
+    <div class="sub">Calendari</div>
+    <div class="calbtns">${cals.map(c => `<button type="button" class="calbtn" data-cal="${c.id}">${lockLabel(c)}${esc(c.name)}</button>`).join('') || '<div class="empty">Nessun calendario qui. Crealo con “+ Calendario”.</div>'}</div>`;
+}
+
+// ---- barra in alto ----
+function topHTML(){
+  const fs = `<button type="button" class="btn" id="fs">Schermo intero</button>`;
+  const priv = `<button type="button" class="btn" id="calPriv">🔐 Area privata</button>`;
+  if (view === 'cal' && curCal){
+    const c = calById(curCal);
+    return `<button type="button" class="btn" id="back">← ${esc(labName(curLab))}</button>
+      <span class="ttl">${c ? lockLabel(c) + esc(c.name) : ''}</span><span class="spacer"></span>
+      <button type="button" class="btn" id="protos">📋 Protocolli</button>
+      <button type="button" class="btn gear" id="calGear" aria-label="Impostazioni" title="Impostazioni">⚙</button>${fs}`;
+  }
+  if (view === 'proto'){
+    return `<button type="button" class="btn" id="back">← Indietro</button>
+      <span class="ttl">Protocolli · ${esc((calById(curCal) || {}).name || '')}</span><span class="spacer"></span>${fs}`;
+  }
+  if (view === 'lab'){
+    return `<button type="button" class="btn" id="back">← Indietro</button>
+      <span class="ttl">${esc(labName(curLab))}</span><span class="spacer"></span>
+      <button type="button" class="btn" id="calNew">+ Calendario</button>
+      ${curLab !== 'none' ? `<button type="button" class="btn" id="grpNew">+ Gruppo</button>` : ''}`;
+  }
+  return `<span class="ttl">Laboratori</span><span class="spacer"></span>
+    <button type="button" class="btn" id="labNew">+ Laboratorio</button>${fs}`;
+}
+
+// ---- rendering: calendario ----
+const tasksFor = key => tasks.filter(t => t.day === key);
+const byStart = (a,b) => (parseSlot(a.slot)?.from ?? 0) - (parseSlot(b.slot)?.from ?? 0);
+const byTime = (a,b) => (a.done?1:0)-(b.done?1:0) || (a.createdAt||0)-(b.createdAt||0);
+
+function item(t){
+  const col = colorOf(t);
+  const style = col ? ` style="--c:${col}"` : '';
+  const r = parseSlot(t.slot);
+  const range = r ? `<span class="rng">${HM(r.from)}–${HM(r.to)}</span>` : '';
+  return `<div class="item ${col?'cat':''} ${t.kind==='booking'?'bk':''} ${t.done?'done':''} ${selectedId===t.id?'sel':''}"${style} data-task="${t.id}" draggable="true">
+    <button type="button" class="ck" data-act="done" aria-label="Segna come fatta">${t.done?'✓':''}</button>
+    <div class="ibody">${range}<span class="ct">${esc(t.title)}</span></div></div>`;
+}
+function chip(t, mode, withRange){
+  const col = colorOf(t);
+  const style = col ? ` style="--c:${col}"` : '';
+  const r = withRange ? parseSlot(t.slot) : null;
+  const rl = r ? `<span class="rng">${HM(r.from)}–${HM(r.to)}</span>` : '';
+  const btn = mode === 'del'
+    ? `<button type="button" class="x" data-act="del" aria-label="Elimina">✕</button>`
+    : `<button type="button" class="x" data-act="unsched" aria-label="Togli dal calendario">↩</button>`;
+  return `<div class="chip ${col?'cat':''} ${t.kind==='booking'?'bk':''} ${t.done?'done':''} ${selectedId===t.id?'sel':''}"${style} data-task="${t.id}" draggable="true">
+    <button type="button" class="ck" data-act="done" aria-label="Segna come fatta">${t.done?'✓':''}</button>
+    ${rl}<span class="ct" title="${esc(t.title)}">${esc(t.title)}</span>${btn}</div>`;
+}
+function assignLanes(list){
+  const ends = [];
+  const out = list.slice().sort(byStart).map(t => {
+    const r = parseSlot(t.slot);
+    let i = ends.findIndex(e => e <= r.from);
+    if (i < 0){ i = ends.length; ends.push(r.to); } else ends[i] = r.to;
+    return {t, lane: i};
+  });
+  return {items: out, n: Math.max(1, ends.length)};
+}
+function timelineHTML(key, timed){
+  let h = `<div class="tl" data-drop="tl" data-tl data-day="${key}" style="height:${TOTAL}px">`;
+  h += `<div class="pl" style="top:0;height:${HEAD_H}px">Mattina</div>`;
+  for (let hr = T0/60; hr < T1/60; hr++){
+    const top = yOf(hr*60);
+    h += `<div class="hl" style="top:${top}px">${pad(hr)}:00</div><div class="hline" style="top:${top}px"></div>`;
+  }
+  h += `<div class="pl" style="top:${yOf(PM)-DIV_H}px;height:${DIV_H}px">Pomeriggio</div>`;
+  const {items, n} = assignLanes(timed);
+  for (const {t, lane} of items){
+    const r = parseSlot(t.slot);
+    const col = colorOf(t);
+    // un'attività che attraversa il pomeriggio diventa due blocchi distinti, con l'etichetta "Pomeriggio" in mezzo
+    const parts = [];
+    if (r.from < PM) parts.push({from: r.from, to: Math.min(r.to, PM)});
+    if (r.to > PM) parts.push({from: Math.max(r.from, PM), to: r.to});
+    for (const p of parts){
+      const top = yOf(p.from);
+      const bottom = p.to === PM ? yOf(PM) - DIV_H : yOf(p.to);
+      const height = Math.max(bottom - top, 24);
+      const style = `top:${top}px;height:${height}px;left:calc(var(--gut) + (100% - var(--gut)) * ${lane} / ${n});width:calc((100% - var(--gut)) / ${n} - 4px);` +
+                    (col ? `--c:${col}` : '');
+      h += `<div class="block ${col?'cat':''} ${t.kind==='booking'?'bk':''} ${t.done?'done':''} ${selectedId===t.id?'sel':''}" style="${style}" data-task="${t.id}" draggable="true">
+        <span class="rng">${HM(p.from)}–${HM(p.to)}</span><span class="ct">${esc(t.title)}</span></div>`;
+    }
+  }
+  return h + `</div>`;
+}
+// su telefono (schermo stretto) la settimana mostra un solo giorno alla volta
+const isPhone = () => window.matchMedia('(max-width:700px)').matches;
+function renderWeek(){
+  const start = mondayOf(cursor);
+  const oneDay = isPhone() && !phoneAll;
+  const days = oneDay ? [cursor] : [...Array(7)].map((_,i) => addDays(start,i));
+  const wide = isPhone() && phoneAll;
+  const today = todayKey();
+  const cols = days.map(d => expandedDays.has(fmt(d)) ? 'minmax(0,2.6fr)' : 'minmax(0,1fr)').join(' ');
+  let h = `<div class="week" style="grid-template-columns:${cols};min-width:${wide ? '940px' : '0'}">`;
+  days.forEach(d => {
+    const key = fmt(d);
+    const open = expandedDays.has(key);
+    const dayTasks = tasksFor(key);
+    const allDay = dayTasks.filter(t => !parseSlot(t.slot)).sort(byTime);
+    const timed = dayTasks.filter(t => parseSlot(t.slot)).sort(byStart);
+    h += `<div class="dcol">
+      <div class="dayhead ${key===today?'is-today':''}">
+        <span class="dname"><span>${WD[(d.getDay()+6)%7]}</span><strong>${d.getDate()}</strong></span>
+        <button type="button" class="dtog" data-toggle="${key}" aria-expanded="${open}" aria-label="Apri la tabella oraria">${open?'▴':'▾'}</button>
+      </div>`;
+    if (open){
+      h += `<div class="allday" data-drop="zone" data-day="${key}">${allDay.map(item).join('')}</div>`;
+      h += timelineHTML(key, timed);
+    } else {
+      const all = [...allDay, ...timed];
+      h += `<div class="ov" data-drop="zone" data-day="${key}">${all.map(item).join('')}${all.length ? '' : '<div class="none">Niente in programma</div>'}</div>`;
+    }
+    h += `</div>`;
+  });
+  return h + `</div>`;
+}
+function renderMonth(){
+  const first = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
+  const start = mondayOf(first);
+  const today = todayKey();
+  let h = `<div class="month">` + WD.map(w => `<div class="mhead">${w}</div>`).join('');
+  for (let i=0;i<42;i++){
+    const d = addDays(start,i), key = fmt(d);
+    const out = d.getMonth() !== cursor.getMonth();
+    h += `<div class="mcell ${out?'out':''} ${key===today?'is-today':''}" data-drop="zone" data-day="${key}">
+      <span class="mnum">${d.getDate()}</span>${tasksFor(key).sort(byStart).map(t=>chip(t,'unsched',true)).join('')}</div>`;
+  }
+  return h + `</div>`;
+}
+function renderList(){
+  const open = tasks.filter(t => !t.day);
+  $('count').textContent = open.length ? `(${open.length})` : '';
+  let h = '';
+  categories.forEach(c => {
+    const items = open.filter(t => t.category === c.id).sort(byTime);
+    if (!items.length) return;
+    h += `<div class="grp-h"><span class="dot" style="background:${c.color}"></span><span>${esc(c.name)}</span><span class="gcount">${items.length}</span></div>`;
+    h += items.map(t => chip(t,'del')).join('');
+  });
+  const none = open.filter(t => !t.category || !catById(t.category)).sort(byTime);
+  if (none.length){
+    if (categories.length) h += `<div class="grp-h"><span>Senza categoria</span><span class="gcount">${none.length}</span></div>`;
+    h += none.map(t => chip(t,'del')).join('');
+  }
+  $('list').innerHTML = h || `<div class="empty">Nessuna attività da organizzare. Scrivine una sopra e trascinala sul calendario.</div>`;
+}
+function dayLabel(day){
+  if (!day) return 'senza data';
+  return new Date(day + 'T00:00').toLocaleDateString('it-IT', {weekday:'short', day:'numeric', month:'short'});
+}
+function bkRow(b){
+  const r = parseSlot(b.slot);
+  const when = 'prenota ' + dayLabel(b.day) + (b.useDay ? ' · usa ' + dayLabel(b.useDay) : '') + (b.day && r ? ` · ${HM(r.from)}–${HM(r.to)}` : '');
+  return `<div class="bkrow ${b.done?'done':''}" data-bk="${b.id}" draggable="true">
+    <div class="line">
+      <button type="button" class="ck" data-bk-act="done" aria-label="Segna come fatta">${b.done?'✓':''}</button>
+      <span class="ct" title="${esc(b.title)}">${esc(b.title)}</span>
+      <button type="button" class="x trash" data-bk-act="del" aria-label="Elimina" title="Elimina">🗑</button>
+    </div>
+    <div class="line">
+      <span class="when">${esc(when)}</span><span class="spacer"></span>
+      <button type="button" class="btn sm" data-bk-act="det" title="Dettagli">📝 Dettagli</button>
+      <button type="button" class="btn sm" data-bk-act="cal" title="Copia nel calendario">📅 Calendario</button>
+    </div>
+  </div>`;
+}
+function renderBookings(){
+  $('bkCount').textContent = bookings.length ? `(${bookings.length})` : '';
+  $('bklist').innerHTML = bookings.length
+    ? bookings.map(bkRow).join('')
+    : `<div class="empty">Scrivi una strumentazione da prenotare. Puoi aggiungere giorno e ore subito o dopo.</div>`;
+}
+function catOptions(selected){
+  return `<option value="">Senza categoria</option>` +
+    categories.map(c => `<option value="${c.id}" ${c.id===selected?'selected':''}>${esc(c.name)}</option>`).join('');
+}
+// campi che l'utente sta compilando non vengono sovrascritti
+function setVal(el, v){ if (document.activeElement !== el) el.value = v; }
+function rebuild(el, html){ if (document.activeElement !== el) el.innerHTML = html; }
+
+function renderEditor(){
+  const t = taskById(selectedId);
+  $('editor').classList.toggle('on', !!t);
+  document.body.classList.toggle('picking', !!t);
+  if (!t) return;
+  const r = parseSlot(t.slot);
+  setVal($('edTitle'), t.title);
+  rebuild($('edCat'), catOptions(t.category));
+  setVal($('edDay'), t.day || '');
+  $('edAll').checked = !r;
+  $('edFrom').disabled = !r;
+  $('edTo').disabled = !r;
+  setVal($('edFrom'), r ? HM(r.from) : '09:00');
+  setVal($('edTo'), r ? HM(r.to) : '10:00');
+  $('edDone').checked = !!t.done;
+}
+function calShellHTML(){
+  return `<div id="calshell">
+    <div class="weekbar">
+      <div class="navgrp">
+        <button type="button" class="btn" id="prev" aria-label="Precedente">‹</button>
+        <span id="period"></span>
+        <button type="button" class="btn" id="next" aria-label="Successivo">›</button>
+      </div>
+      <span class="spacer"></span>
+      <div class="viewgrp">
+        <button type="button" class="btn" id="today">Oggi</button>
+        <button type="button" class="btn" id="vw" aria-pressed="true">Settimana</button>
+        <button type="button" class="btn" id="phoneAll" hidden>7 giorni</button>
+        <button type="button" class="btn" id="vm" aria-pressed="false">Mese</button>
+      </div>
+    </div>
+    <div class="modalback" id="bkModal" hidden>
+      <div class="modal" style="max-width:540px">
+        <div class="mhead"><h2 id="bkDetTitle">Dettagli</h2><button type="button" class="btn" id="bkDetClose">Chiudi</button></div>
+        <div style="padding:12px;display:grid;gap:10px">
+          <div class="row" style="display:flex;gap:10px;flex-wrap:wrap">
+            <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted)">Data
+              <input id="bkDetDate" type="date" style="width:160px"></label>
+            <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted)">Giorno della settimana
+              <select id="bkDetWeekday">
+                <option value="">—</option>
+                <option value="1">Lunedì</option><option value="2">Martedì</option><option value="3">Mercoledì</option>
+                <option value="4">Giovedì</option><option value="5">Venerdì</option><option value="6">Sabato</option><option value="0">Domenica</option>
+              </select></label>
+          </div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted)">Giorno di utilizzo
+              <select id="bkDetUseWeekday">
+                <option value="">—</option>
+                <option value="1">Lunedì</option><option value="2">Martedì</option><option value="3">Mercoledì</option>
+                <option value="4">Giovedì</option><option value="5">Venerdì</option><option value="6">Sabato</option><option value="0">Domenica</option>
+              </select></label>
+            <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted)">Data di utilizzo
+              <input id="bkDetUseDate" type="date" style="width:160px"></label>
+          </div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted)">Dalle <input id="bkDetFrom" type="time" step="900"></label>
+            <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted)">Alle <input id="bkDetTo" type="time" step="900"></label>
+          </div>
+          <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted)">Dettagli (una voce per riga)
+            <textarea id="bkDetails" rows="10" style="width:100%;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px;color:var(--fg)"></textarea>
+          </label>
+          <div><button type="button" class="btn" id="bkDetSave">Salva</button></div>
+        </div>
+      </div>
+    </div>
+    <div class="calgrid">
+      <div class="left">
+        <section class="panel"><div class="scroll" id="cal"></div></section>
+        <section class="panel" id="editor">
+          <h2>Modifica attività <button type="button" class="btn" id="edClose">Chiudi</button></h2>
+          <div class="edtitle">Tocca un giorno o un'ora per spostarla, oppure compila i campi qui sotto.</div>
+          <div class="ed">
+            <label>Titolo <input id="edTitle" type="text" maxlength="200"></label>
+            <label>Categoria <select id="edCat"></select></label>
+            <label>Giorno <input id="edDay" type="date"></label>
+            <label class="inline"><input id="edAll" type="checkbox"> Tutto il giorno</label>
+            <label>Dalle <input id="edFrom" type="time" step="900"></label>
+            <label>Alle <input id="edTo" type="time" step="900"></label>
+            <label class="inline"><input id="edDone" type="checkbox"> Fatta</label>
+            <div class="edbtns">
+              <button type="button" class="btn" id="edUnsched">Togli dal calendario</button>
+              <button type="button" class="btn danger" id="edDel">Elimina</button>
+            </div>
+          </div>
+        </section>
+      </div>
+      <div class="side">
+        <aside class="panel">
+          <h2>Da organizzare <span id="count" class="note"></span></h2>
+          <div class="add">
+            <input id="newTitle" type="text" placeholder="Nuova attività" maxlength="200" aria-label="Nuova attività">
+            <select id="newCat" aria-label="Categoria"></select>
+            <button type="button" class="btn" id="addBtn">Aggiungi</button>
+          </div>
+          <div class="list" id="list" data-drop="list"></div>
+        </aside>
+        <aside class="panel">
+          <h2>Strumentazione da prenotare <span id="bkCount" class="note"></span></h2>
+          <div class="add">
+            <input id="bkTitle" class="full" type="text" placeholder="Strumentazione da prenotare" maxlength="200" aria-label="Cosa prenotare">
+            <select id="bkWeekday" aria-label="Giorno della settimana">
+              <option value="">Giorno in cui prenotare</option>
+              <option value="1">Lunedì</option><option value="2">Martedì</option><option value="3">Mercoledì</option>
+              <option value="4">Giovedì</option><option value="5">Venerdì</option><option value="6">Sabato</option><option value="0">Domenica</option>
+            </select>
+            <input id="bkDate" type="date" aria-label="Data in cui prenotare">
+            <select id="bkUseWeekday" aria-label="Giorno di utilizzo">
+              <option value="">Giorno di utilizzo</option>
+              <option value="1">Lunedì</option><option value="2">Martedì</option><option value="3">Mercoledì</option>
+              <option value="4">Giovedì</option><option value="5">Venerdì</option><option value="6">Sabato</option><option value="0">Domenica</option>
+            </select>
+            <input id="bkUseDate" type="date" aria-label="Data di utilizzo">
+            <button type="button" class="btn full" id="bkAdd">Aggiungi</button>
+          </div>
+          <div class="list" id="bklist"></div>
+        </aside>
+      </div>
+    </div>
+  </div>`;
+}
+function renderCalParts(){
+  $('period').textContent = weekView === 'week'
+    ? (() => { if (isPhone() && !phoneAll) return cursor.toLocaleDateString('it-IT',{weekday:'long',day:'numeric',month:'long'});
+        const s = mondayOf(cursor), e = addDays(s,6);
+        return `${s.toLocaleDateString('it-IT',{day:'numeric',month:'short'})} – ${e.toLocaleDateString('it-IT',{day:'numeric',month:'short',year:'numeric'})}`; })()
+    : (() => { const t = cursor.toLocaleDateString('it-IT',{month:'long',year:'numeric'}); return t.charAt(0).toUpperCase() + t.slice(1); })();
+  $('vw').setAttribute('aria-pressed', weekView==='week');
+  $('vm').setAttribute('aria-pressed', weekView==='month');
+  $('phoneAll').hidden = !(isPhone() && weekView === 'week');
+  $('phoneAll').textContent = phoneAll ? '1 giorno' : '7 giorni';
+  $('cal').classList.toggle('wide', isPhone() && phoneAll && weekView === 'week');
+  $('cal').innerHTML = weekView === 'week' ? renderWeek() : renderMonth();
+  renderList();
+  renderBookings();
+  if (!bkDateManual && $('bkWeekday').value !== '' && document.activeElement !== $('bkDate')){
+    $('bkDate').value = weekdayDate($('bkWeekday').value);
+  }
+  if ($('bkUseWeekday').value !== '' && document.activeElement !== $('bkUseDate')){
+    $('bkUseDate').value = weekdayDate($('bkUseWeekday').value);
+  }
+  rebuild($('newCat'), catOptions($('newCat').value));
+  renderEditor();
+}
+
+// ---- impostazioni: menu che dipendono da gruppi e categorie ----
+function renderSettings(){
+  const c = calById(curCal);
+  const grpOpts = groups.slice().sort((a,b) => grpPath(a.id).localeCompare(grpPath(b.id), 'it'))
+    .map(g => `<option value="${g.id}">${esc(grpPath(g.id))}</option>`).join('');
+  rebuild($('setGroup'), `<option value="">Nessun gruppo</option>` + grpOpts);
+  if (c && document.activeElement !== $('setGroup')) $('setGroup').value = c.groupId || '';
+  rebuild($('grpParent'), `<option value="">Livello principale</option>` + grpOpts);
+  rebuild($('grpSel'), grpOpts || `<option value="">Nessun gruppo</option>`);
+  rebuild($('catSel'), categories.length
+    ? categories.map(x => `<option value="${x.id}">${esc(x.name)}</option>`).join('')
+    : `<option value="">Nessuna categoria</option>`);
+  const cc = catById($('catSel').value);
+  if (cc && document.activeElement !== $('catColor')) $('catColor').value = cc.color;
+  // ruolo: solo gli admin cambiano PIN e gestiscono i link
+  const c2 = calById(curCal);
+  const adminOnly = !!(c2 && c2.protected) && !isAdminNow();
+  ['setCodeSave','linkMake','linkRevoke'].forEach(id => { if ($(id)) $(id).disabled = adminOnly; });
+  // PIN admin: visibile a tutti solo finché non esiste un admin, poi solo agli admin
+  const showAdmin = !!(c2 && c2.protected && adminInfo.cal === curCal && (!adminInfo.has || isAdminNow()));
+  $('adminBlock').hidden = !showAdmin;
+  // eliminare il calendario protetto è riservato agli admin
+  $('setDelete').disabled = !!(c2 && c2.protected && !isAdminNow());
+  if ($('roleInfo')){
+    $('roleInfo').textContent = !c2 ? ''
+      : !c2.protected ? 'Calendario senza PIN: aperto a tutti.'
+      : isAdminNow() ? 'Sei admin di questo calendario.'
+      : 'Sei membro. Per cambiare PIN e link serve il PIN admin.';
+  }
+}
+
+function render(){
+  if (view === 'cal' && !curCal) view = 'home';
+  applyBg();
+  $('top').innerHTML = topHTML();
+  if (view === 'cal'){
+    if (!$('calshell')) $('view').innerHTML = calShellHTML();
+    renderCalParts();
+  } else if (view === 'proto'){
+    $('view').innerHTML = protoHTML();
+    refreshCalc();
+  } else if (view === 'lab'){
+    $('view').innerHTML = labHTML();
+  } else {
+    $('view').innerHTML = homeHTML();
+  }
+  renderSettings();
+}
+
+// ---- trascinamento e tocco sulle zone del calendario ----
+function applyDrop(zone, clientY, id){
+  if (zone.dataset.drop === 'list'){ move(id, null, null); return; }
+  const day = zone.dataset.day;
+  if (zone.hasAttribute('data-tl')){
+    const rect = zone.getBoundingClientRect();
+    dropOnTime(id, day, minFromY(clientY - rect.top));
+  } else {
+    const t = taskById(id); move(id, day, t ? t.slot : null);
+  }
+}
+
+// ---- interazione ----
+const root = document.querySelector('.wrap');
+root.addEventListener('click', e => {
+  if (e.target.id === 'modal'){ closeSettings(); return; }
+  if (e.target.id === 'askModal' || e.target.closest('#askNo')){ closeAsk(false); return; }
+  if (e.target.closest('#askOk')){ closeAsk(true); return; }
+  if (e.target.id === 'bkModal'){ closeBkDetails(); return; }
+  if (e.target.closest('#back')){ goBack(); return; }
+  const lab = e.target.closest('[data-lab]');
+  if (lab){ openLab(lab.dataset.lab); return; }
+  const cal = e.target.closest('[data-cal]');
+  if (cal){ selectCalendar(cal.dataset.cal); return; }
+  if (e.target.closest('#labNew')){ newGroup(null); return; }
+  if (e.target.closest('#grpNew')){ newGroup(curLab); return; }
+  if (e.target.closest('#calNew')){ newCalendar(); return; }
+  if (e.target.closest('#calPriv')){ openPrivate(); return; }
+  if (e.target.closest('#calGear')){ openSettings(); return; }
+  if (e.target.closest('#lockOut')){ lockAll(); return; }
+  if (e.target.closest('#fs')){
+    if (document.fullscreenElement){ document.exitFullscreen?.(); }
+    else { document.documentElement.requestFullscreen?.().catch(() => flash('Schermo intero non disponibile su questo dispositivo.')); }
+    return;
+  }
+  if (e.target.closest('#prev')){ cursor = weekView==='week' ? addDays(cursor, (isPhone() && !phoneAll) ? -1 : -7) : new Date(cursor.getFullYear(), cursor.getMonth()-1, 1); render(); return; }
+  if (e.target.closest('#next')){ cursor = weekView==='week' ? addDays(cursor, (isPhone() && !phoneAll) ? 1 : 7) : new Date(cursor.getFullYear(), cursor.getMonth()+1, 1); render(); return; }
+  if (e.target.closest('#today')){ const n = new Date(); cursor = new Date(n.getFullYear(), n.getMonth(), n.getDate()); render(); return; }
+  if (e.target.closest('#phoneAll')){ phoneAll = !phoneAll; render(); return; }
+  if (e.target.closest('#vw')){ weekView = 'week'; render(); return; }
+  if (e.target.closest('#vm')){ weekView = 'month'; render(); return; }
+  if (e.target.closest('#edClose')){ selectedId = null; render(); return; }
+  if (e.target.closest('#edUnsched')){ if (selectedId){ const id = selectedId; selectedId = null; saveChange(id, {day:null, slot:null}); } return; }
+  if (e.target.closest('#edDel')){
+    if (selectedId){ const id = selectedId; askConfirm('Eliminare questa attività?').then(ok => { if (ok) removeTask(id); }); }
+    return;
+  }
+  if (e.target.closest('#addBtn')){ const i = $('newTitle'); addTask(i.value, $('newCat').value); i.value = ''; i.focus(); return; }
+  if (e.target.closest('#bkAdd')){ addBooking(); return; }
+  if (e.target.closest('#setClose')){ closeSettings(); return; }
+  if (e.target.closest('#setNameSave')){ saveName(); return; }
+  if (e.target.closest('#setCodeSave')){ saveCode(); return; }
+  if (e.target.closest('#setDelete')){ deleteCalendar(); return; }
+  if (e.target.closest('#grpAdd')){ addGroupFromSettings(); return; }
+  if (e.target.closest('#grpRename')){ renameGroup(); return; }
+  if (e.target.closest('#grpDel')){ deleteGroup(); return; }
+  if (e.target.closest('#catRename')){ renameCategory(); return; }
+  if (e.target.closest('#catDel')){ removeCategory(); return; }
+  if (e.target.closest('#catAdd')){ const n = $('catName'); addCategory(n.value, $('catNewColor').value); n.value = ''; n.focus(); return; }
+  const sw = e.target.closest('[data-bg-color]');
+  if (sw){ setBg({type:'color', value: sw.dataset.bgColor}); return; }
+  if (e.target.closest('#bgImg')){ setBgImage(); return; }
+  if (e.target.closest('#bgReset')){ setBg(null); return; }
+  if (e.target.closest('#asAdmin')){ asAdmin(); return; }
+  if (e.target.closest('#setAdminSave')){ saveAdminPin(); return; }
+  if (e.target.closest('#linkMake')){ makeLink(); return; }
+  if (e.target.closest('#linkRevoke')){ revokeLinks(); return; }
+  const bk = e.target.closest('[data-bk-act]');
+  if (bk){
+    const id = bk.closest('[data-bk]').dataset.bk;
+    const b = bookings.find(x => x.id === id); if (!b) return;
+    const act = bk.dataset.bkAct;
+    if (act === 'done') saveBooking(id, {done: !b.done});
+    if (act === 'del') askConfirm(`Eliminare “${b.title}” dalle strumentazioni?`).then(ok => { if (ok) removeBooking(id); });
+    if (act === 'det') openBkDetails(id);
+    if (act === 'cal') copyBooking(id, b.day, b.slot);
+    return;
+  }
+  if (e.target.closest('#protos')){ openProto(); return; }
+  const tabBtn = e.target.closest('[data-ptab]');
+  if (tabBtn){ protoTab = tabBtn.dataset.ptab; protoOpen = null; render(); return; }
+  if (e.target.closest('#protoNew')){ protoNew(); return; }
+  if (e.target.closest('#protoSave')){ protoSave(); return; }
+  if (e.target.closest('#protoClose')){ protoOpen = null; render(); return; }
+  if (e.target.closest('#protoPrint')){
+    const p = protos.find(x => x.id === protoOpen); if (!p) return;
+    const values = {};
+    document.querySelectorAll('[data-ph]').forEach(i => { values[i.dataset.ph] = i.value.trim(); });
+    const rc = recipeDefaults(parseRecipe(p.recipe));
+    const target = +($('rcTarget') && $('rcTarget').value) || rc.base.value;
+    const n = rc.samples ? (+($('rcN') && $('rcN').value) || 1) : 1;
+    const rows = calcItems(rc, target, n).filter(c => c.name);
+    const td = 'border:1px solid #999;padding:4px 6px';
+    const extra = rows.length
+      ? `<h3>Quantità</h3><p>${esc(rc.base.label)}: ${fmtNum(target)} ${esc(rc.base.unit)}${rc.samples ? ` · campioni: ${n}` : ''}</p>
+         <table style="border-collapse:collapse;width:100%">${rows.map(c =>
+           `<tr><td style="${td}">${esc(c.name)}</td><td style="${td};text-align:right">${fmtNum(c.value)} ${esc(c.unit)}</td></tr>`).join('')}</table>`
+      : '';
+    const tdp = 'border:1px solid #999;padding:4px 6px';
+    const stepsPrint = rc.steps.length ? '<h3>Passaggi</h3>' + rc.steps.map((st, si) => {
+      let h = `<p><b>${si + 1}.</b> ${esc(st.text)}</p>`;
+      const cols = colsOf(st);
+      if (st.tbl && cols.length){
+        const rowsHtml = [...Array(Math.max(1, +st.rows || 1))].map((_, r) => `<tr>${cols.map((c, ci) => {
+          const cell = document.querySelector(`[data-tbl="${si}"][data-r="${r}"][data-c="${ci}"]`);
+          return `<td style="${tdp};height:22px">${esc(cell ? cell.value : '')}</td>`;
+        }).join('')}</tr>`).join('');
+        h += `<table style="border-collapse:collapse;width:100%;margin:4px 0 10px"><tr>${cols.map(c => `<th style="${tdp};text-align:left">${esc(c)}</th>`).join('')}</tr>${rowsHtml}</table>`;
+      }
+      return h;
+    }).join('') : '';
+    const impPrint = rc.imports.map((imp, i) => {
+      const rec = protos.find(x => x.id === imp.id); if (!rec) return '';
+      const rr = recipeDefaults(parseRecipe(rec.recipe));
+      const inp = document.querySelector(`[data-impf="${i}"]`);
+      const vol = inp ? (+inp.value || 0) : imp.vol;
+      return `<h3>Ricetta: ${esc(rec.title)}</h3><p>Volume: ${fmtNum(vol)} ${esc(rr.base.unit)}</p>${recipeTableHTML(rr, vol)}`;
+    }).join('');
+    printProtocol(p.title, p.body, values, extra + blocksPrint(rc));
+    return;
+  }
+  const pa = e.target.closest('[data-proto-act]');
+  if (pa){
+    const id = pa.dataset.id;
+    if (pa.dataset.protoAct === 'use'){ protoOpen = id; protoMode = 'fill'; render(); }
+    if (pa.dataset.protoAct === 'edit'){ protoOpen = id; protoMode = 'edit'; render(); }
+    if (pa.dataset.protoAct === 'del'){ protoDelete(id); }
+    if (['blkmenu','blkadd','blkdel','blkup','blkdown'].includes(pa.dataset.protoAct)){
+      const p = protos.find(x => x.id === protoOpen); if (!p) return;
+      if (pa.dataset.protoAct === 'blkmenu'){ const m = $('blkMenu'); if (m) m.hidden = !m.hidden; return; }
+      syncDraft(p);
+      const r = recipeDefaults(parseRecipe(p.recipe));
+      const bl = getBlocks(r);
+      const i = +pa.dataset.i;
+      const act = pa.dataset.protoAct;
+      if (act === 'blkadd'){
+        const t = pa.dataset.t;
+        if (t === 'recipe'){
+          const sel = $('blkRecSel'); const rec = sel && protos.find(x => x.id === sel.value);
+          if (!rec){ flash('Scegli una ricetta dal menu.'); return; }
+          bl.push({type: 'recipe', id: rec.id, vol: recipeDefaults(parseRecipe(rec.recipe)).base.value});
+        } else if (t === 'table') bl.push({type: 'table', text: '', cols: '', rows: 3});
+        else bl.push({type: 'text', text: ''});
+      }
+      if (act === 'blkdel') bl.splice(i, 1);
+      if (act === 'blkup' && i > 0) [bl[i-1], bl[i]] = [bl[i], bl[i-1]];
+      if (act === 'blkdown' && i < bl.length - 1) [bl[i], bl[i+1]] = [bl[i+1], bl[i]];
+      r.blocks = bl;
+      p.recipe = JSON.stringify(r);
+      render();
+      return;
+    }
+    if (pa.dataset.protoAct === 'impadd' || pa.dataset.protoAct === 'impdel'){
+      const p = protos.find(x => x.id === protoOpen); if (!p) return;
+      syncDraft(p);
+      const r = recipeDefaults(parseRecipe(p.recipe));
+      if (pa.dataset.protoAct === 'impadd'){
+        const sel = $('impSel'); const rec = sel && protos.find(x => x.id === sel.value);
+        if (!rec) return;
+        r.imports.push({id: rec.id, vol: recipeDefaults(parseRecipe(rec.recipe)).base.value});
+      } else r.imports.splice(+pa.dataset.i, 1);
+      p.recipe = JSON.stringify(r);
+      render();
+    }
+    if (pa.dataset.protoAct === 'stadd' || pa.dataset.protoAct === 'stdel'){
+      const p = protos.find(x => x.id === protoOpen); if (!p) return;
+      syncDraft(p);
+      const r = recipeDefaults(parseRecipe(p.recipe));
+      if (pa.dataset.protoAct === 'stadd') r.steps.push({text: '', tbl: false, cols: '', rows: 1});
+      else r.steps.splice(+pa.dataset.i, 1);
+      p.recipe = JSON.stringify(r);
+      render();
+    }
+    if (pa.dataset.protoAct === 'rcadd' || pa.dataset.protoAct === 'rcdel'){
+      const p = protos.find(x => x.id === protoOpen); if (!p) return;
+      syncDraft(p);
+      const r = recipeDefaults(parseRecipe(p.recipe));
+      if (pa.dataset.protoAct === 'rcadd') r.items.push({name: '', qty: 0, unit: '', mode: p.kind === 'recipe' ? 'dil' : 'vol'});
+      else r.items.splice(+pa.dataset.i, 1);
+      p.recipe = JSON.stringify(r);
+      render();
+    }
+    return;
+  }
+  if (e.target.closest('#bkDetClose')){ closeBkDetails(); return; }
+  if (e.target.closest('#bkDetSave')){ saveBkDetails(); return; }
+  const tog = e.target.closest('[data-toggle]');
+  if (tog){
+    const key = tog.dataset.toggle;
+    expandedDays.has(key) ? expandedDays.delete(key) : expandedDays.add(key);
+    render(); return;
+  }
+  const act = e.target.closest('[data-act]');
+  if (act){
+    const id = act.closest('[data-task]').dataset.task;
+    const t = taskById(id); if (!t) return;
+    if (act.dataset.act === 'done') saveChange(id, {done: !t.done});
+    if (act.dataset.act === 'unsched'){ if (selectedId === id) selectedId = null; saveChange(id, {day:null, slot:null}); }
+    if (act.dataset.act === 'del') removeTask(id);
+    return;
+  }
+  const zone = e.target.closest('[data-drop]');
+  const onListItem = e.target.closest('#list [data-task]');
+  if (selectedId && zone && !onListItem){
+    applyDrop(zone, e.clientY, selectedId);
+    return;
+  }
+  const task = e.target.closest('[data-task]');
+  if (task) selectTask(task.dataset.task);
+});
+
+// swipe orizzontale su telefono: giorno precedente o successivo (non sulle attività né sulla tabella oraria)
+let swipeX = null;
+root.addEventListener('touchstart', e => {
+  const onItem = e.target.closest('[data-task],.tl,[data-act],[data-bk-act]');
+  swipeX = (view === 'cal' && isPhone() && !phoneAll && weekView === 'week' && !onItem) ? e.touches[0].clientX : null;
+}, {passive: true});
+root.addEventListener('touchend', e => {
+  if (swipeX === null) return;
+  const dx = e.changedTouches[0].clientX - swipeX;
+  swipeX = null;
+  if (Math.abs(dx) > 60){ cursor = addDays(cursor, dx < 0 ? 1 : -1); render(); }
+}, {passive: true});
+window.matchMedia('(max-width:700px)').addEventListener('change', () => render());
+
+root.addEventListener('input', e => {
+  if (e.target.id === 'rcTarget' || e.target.id === 'rcN') refreshCalc();
+  if (e.target.hasAttribute('data-impf')) refreshImports();
+});
+
+root.addEventListener('keydown', e => {
+  if (e.key !== 'Enter') return;
+  if (e.target.id === 'newTitle') $('addBtn').click();
+  if (e.target.id === 'bkTitle') $('bkAdd').click();
+  if (e.target.id === 'catName') $('catAdd').click();
+  if (e.target.id === 'grpName') $('grpAdd').click();
+});
+
+root.addEventListener('change', e => {
+  const t0 = e.target;
+  if (t0.dataset.bkField){
+    const id = t0.closest('[data-bk]').dataset.bk;
+    const b = bookings.find(x => x.id === id); if (!b) return;
+    if (t0.dataset.bkField === 'day'){
+      saveBooking(id, {day: t0.value || null, slot: t0.value ? (b.slot || bkSlot('09:00','10:00')) : null});
+    } else {
+      const row = t0.closest('.bkrow');
+      const from = row.querySelector('[data-bk-field="from"]').value;
+      const to = row.querySelector('[data-bk-field="to"]').value;
+      saveBooking(id, {slot: bkSlot(from, to)});
+    }
+    return;
+  }
+  if (t0.id === 'bkWeekday'){ bkDateManual = false; $('bkDate').value = weekdayDate(t0.value); return; }
+  if (t0.id === 'bkDate'){ bkDateManual = true; return; }
+  if (t0.id === 'bkDetWeekday'){ $('bkDetDate').value = weekdayDate(t0.value); return; }
+  if (t0.id === 'bkUseWeekday'){ $('bkUseDate').value = weekdayDate(t0.value); return; }
+  if (t0.id === 'bkDetUseWeekday'){ $('bkDetUseDate').value = weekdayDate(t0.value); return; }
+  if (t0.id === 'setGroup'){ setCalGroup(t0.value); return; }
+  if (t0.id === 'catSel'){ render(); return; }
+  if (t0.id === 'catColor'){ updateCategory($('catSel').value, {color: t0.value}); return; }
+  if (t0.id === 'bgColor'){ setBg({type:'color', value: t0.value}); return; }
+  const id = selectedId; const t = id && taskById(id);
+  if (!t) return;
+  switch (t0.id){
+    case 'edTitle': {
+      const v = t0.value.trim();
+      if (v) saveChange(id, {title: v}); else render();
+      break;
+    }
+    case 'edCat': saveChange(id, {category: t0.value || null}); break;
+    case 'edDay': saveChange(id, {day: t0.value || null}); break;
+    case 'edAll': {
+      if (t0.checked) saveChange(id, {slot: null});
+      else saveChange(id, {slot: encRange(9*60, 10*60)});
+      break;
+    }
+    case 'edFrom': {
+      const r = parseSlot(t.slot) || {from: 9*60, to: 10*60};
+      const from = toMin(t0.value);
+      const to = r.to > from ? r.to : from + 60;
+      saveChange(id, {slot: encRange(from, to)});
+      break;
+    }
+    case 'edTo': {
+      const r = parseSlot(t.slot) || {from: 9*60, to: 10*60};
+      const to = toMin(t0.value);
+      if (to <= r.from){ flash('L’orario di fine deve essere dopo quello di inizio.'); render(); break; }
+      saveChange(id, {slot: encRange(r.from, to)});
+      break;
+    }
+    case 'edDone': saveChange(id, {done: t0.checked}); break;
+  }
+});
+
+root.addEventListener('dragstart', e => {
+  const bkEl = e.target.closest('[data-bk]');
+  if (bkEl){ e.dataTransfer.setData('text/plain', 'bk:' + bkEl.dataset.bk); e.dataTransfer.effectAllowed = 'copyMove'; return; }
+  const task = e.target.closest('[data-task]'); if (!task) return;
+  e.dataTransfer.setData('text/plain', task.dataset.task);
+  e.dataTransfer.effectAllowed = 'move';
+  task.classList.add('dragging');
+});
+root.addEventListener('dragend', e => {
+  const task = e.target.closest('[data-task]'); if (task) task.classList.remove('dragging');
+});
+root.addEventListener('dragover', e => {
+  const zone = e.target.closest('[data-drop]'); if (!zone) return;
+  e.preventDefault(); e.dataTransfer.dropEffect = 'move';
+  document.querySelectorAll('.over').forEach(n => n.classList.remove('over'));
+  zone.classList.add('over');
+});
+root.addEventListener('dragleave', e => {
+  const zone = e.target.closest('[data-drop]'); if (zone) zone.classList.remove('over');
+});
+root.addEventListener('drop', e => {
+  const zone = e.target.closest('[data-drop]'); if (!zone) return;
+  e.preventDefault();
+  document.querySelectorAll('.over').forEach(n => n.classList.remove('over'));
+  const id = e.dataTransfer.getData('text/plain'); if (!id) return;
+  if (id.startsWith('bk:')){ dropBooking(zone, e.clientY, id.slice(3)); return; }
+  applyDrop(zone, e.clientY, id);
+});
+
+// ---- avvio ----
+async function init(){
+  render();
+  const ok = await loadCalendars();
+  if (!ok) return;
+  if (!calendars.length){
+    flash('Nessun calendario trovato: esegui il codice SQL su Supabase.');
+    return;
+  }
+  // se il link contiene ?cal=nome si apre quel calendario, altrimenti si parte dalla home
+  const params = new URLSearchParams(location.search);
+  const want = params.get('cal'), k = params.get('k');
+  // link personale (?k=...): il database lo riconosce e il calendario si apre senza PIN
+  if (k){
+    const {data} = await sb.rpc('protected_list', {p_pin: k});
+    if (data && data.length){ data.forEach(r => setPin(r.id, k)); await loadCalendars(); }
+  }
+  const c = (want && calendars.find(x => slug(x.name) === slug(want)))
+         || (k && calendars.find(x => pinFor(x.id) === k));
+  if (c){ await selectCalendar(c.id); }
+  else { view = 'home'; render(); }
+}
+init();
+// ogni modifica fatta da un altro telefono aggiorna la pagina
+sb.channel('calendario')
+  .on('postgres_changes', {event:'*', schema:'public', table:'tasks'}, () => loadAll())
+  .on('postgres_changes', {event:'*', schema:'public', table:'categories'}, () => loadAll())
+  .on('postgres_changes', {event:'*', schema:'public', table:'bookings'}, () => loadAll())
+  .on('postgres_changes', {event:'*', schema:'public', table:'protocols'}, () => loadAll())
+  .on('postgres_changes', {event:'*', schema:'public', table:'calendars'}, async () => { await loadCalendars(); render(); })
+  .on('postgres_changes', {event:'*', schema:'public', table:'groups'}, async () => { await loadCalendars(); render(); })
+  .subscribe();
+</script>
+</body>
+</html>
