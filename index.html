@@ -470,7 +470,8 @@ function recipeDefaults(r){
   return {
     base: {label: r.base?.label || 'Volume', value: +r.base?.value || 100, unit: r.base?.unit || 'ml'},
     samples: !!r.samples,
-    items: Array.isArray(r.items) ? r.items : [],
+    items: (r.own !== false && Array.isArray(r.items)) ? r.items : [],
+    own: r.own !== false,
     steps: Array.isArray(r.steps) ? r.steps : [],
     imports: Array.isArray(r.imports) ? r.imports : [],
     blocks: Array.isArray(r.blocks) ? r.blocks : undefined,
@@ -558,27 +559,27 @@ function toolsEditorHTML(rc){
 // ---- blocchi del protocollo: passaggi, tabelle e ricette, in ordine ----
 // Ogni blocco è {type:'text', text} oppure {type:'table', text, cols, rows} oppure {type:'recipe', id, vol}
 function getBlocks(rc){
-  if (Array.isArray(rc.blocks)) return rc.blocks;
-  // protocolli salvati prima dei blocchi: passaggi e ricette in un unico elenco
-  return [
+  const bl = Array.isArray(rc.blocks) ? rc.blocks : [
     ...rc.steps.map(st => ({type: st.tbl ? 'table' : 'text', text: st.text || '', cols: st.cols || '', rows: st.rows || 1})),
     ...rc.imports.map(imp => ({type: 'recipe', id: imp.id, vol: imp.vol}))
   ];
+  // sezione: Necessario (ricette e calcoli) oppure Procedimento (passaggi); si cambia per ogni blocco
+  return bl.map(b => ({...b, sec: b.sec || (b.type === 'recipe' ? 'nec' : 'proc')}));
 }
 function readBlocks(){
   return [...document.querySelectorAll('[data-blk]')].map(row => {
     const type = row.dataset.type;
     const get = f => { const el = row.querySelector(`[data-bf="${f}"]`); return el ? el.value : ''; };
-    if (type === 'recipe') return {type, id: row.dataset.id, vol: +get('vol') || 0};
-    if (type === 'table') return {type, text: get('text').trim(), cols: get('cols').trim(), rows: +get('rows') || 1};
-    return {type: 'text', text: get('text').trim()};
+    const sec = get('sec') === 'nec' ? 'nec' : 'proc';
+    if (type === 'recipe') return {type, id: row.dataset.id, vol: +get('vol') || 0, sec};
+    if (type === 'table') return {type, text: get('text').trim(), cols: get('cols').trim(), rows: +get('rows') || 1, sec};
+    return {type: 'text', text: get('text').trim(), sec};
   });
 }
 function blocksEditorHTML(rc){
   const bl = getBlocks(rc);
   const recOpts = protos.filter(p => p.kind === 'recipe').map(p => `<option value="${p.id}">${esc(p.title)}</option>`).join('');
-  const rows = bl.map((b, i) => {
-    const label = b.type === 'recipe' ? 'Ricetta' : (b.type === 'table' ? 'Tabella' : 'Passaggio');
+  const rowHTML = (b, i) => {
     const tools = `<button type="button" class="x" data-proto-act="blkup" data-i="${i}" aria-label="Sposta su" title="Sposta su">↑</button>
       <button type="button" class="x" data-proto-act="blkdown" data-i="${i}" aria-label="Sposta giù" title="Sposta giù">↓</button>
       <button type="button" class="x trash" data-proto-act="blkdel" data-i="${i}" aria-label="Togli" title="Togli">✕</button>`;
@@ -596,78 +597,92 @@ function blocksEditorHTML(rc){
       body = `<input data-bf="text" type="text" value="${esc(b.text || '')}" placeholder="Passaggio, per esempio: caricare i campioni" style="flex:1 1 100%">`;
     }
     return `<div class="rcrow" data-blk="${i}" data-type="${b.type}" data-id="${b.id || ''}">
-      <span class="note" style="min-width:76px">${label}</span>${body}${tools}</div>`;
-  }).join('');
-  return `<fieldset style="border:1px solid var(--line);border-radius:10px;padding:10px;display:grid;gap:8px;min-width:0">
-    <legend class="note">Passaggi e blocchi</legend>
-    ${rows || '<div class="empty">Nessun passaggio ancora. Premi + per aggiungerne uno.</div>'}
-    <div><button type="button" class="btn" data-proto-act="blkmenu">+ Aggiungi</button></div>
-    <div id="blkMenu" hidden style="display:grid;gap:6px;padding:8px;border:1px solid var(--line);border-radius:10px;max-width:520px">
-      <button type="button" class="btn" data-proto-act="blkadd" data-t="text">Passaggio (testo)</button>
-      <button type="button" class="btn" data-proto-act="blkadd" data-t="table">Tabella da compilare</button>
-      <div style="display:flex;gap:6px;flex-wrap:wrap">
-        <select id="blkRecSel" style="flex:1 1 180px">${recOpts || '<option value="">Nessuna ricetta: creala nella scheda Ricette</option>'}</select>
-        <button type="button" class="btn" data-proto-act="blkadd" data-t="recipe">Ricetta</button>
+      <select data-bf="sec" aria-label="Sezione" style="flex:1 1 130px">
+        <option value="nec" ${b.sec === 'nec' ? 'selected' : ''}>Necessario</option>
+        <option value="proc" ${b.sec === 'nec' ? '' : 'selected'}>Procedimento</option>
+      </select>${body}${tools}</div>`;
+  };
+  const section = (key, title) => {
+    const rows = bl.map((b, i) => ({b, i})).filter(x => x.b.sec === key).map(x => rowHTML(x.b, x.i)).join('');
+    return `<fieldset style="border:1px solid var(--line);border-radius:10px;padding:10px;display:grid;gap:8px;min-width:0">
+      <legend class="note"><b>${title}</b></legend>
+      ${rows || '<div class="empty">Ancora vuoto. Premi + per aggiungere.</div>'}
+      <div><button type="button" class="btn" data-proto-act="blkmenu" data-sec="${key}">+ Aggiungi a ${title}</button></div>
+      <div id="blkMenu-${key}" hidden style="display:grid;gap:6px;padding:8px;border:1px solid var(--line);border-radius:10px;max-width:520px">
+        <button type="button" class="btn" data-proto-act="blkadd" data-t="text" data-sec="${key}">Passaggio (testo)</button>
+        <button type="button" class="btn" data-proto-act="blkadd" data-t="table" data-sec="${key}">Tabella da compilare</button>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <select id="blkRecSel-${key}" style="flex:1 1 180px">${recOpts || '<option value="">Nessuna ricetta: creala nella scheda Ricette</option>'}</select>
+          <button type="button" class="btn" data-proto-act="blkadd" data-t="recipe" data-sec="${key}">Ricetta</button>
+        </div>
       </div>
-    </div>
+    </fieldset>`;
+  };
+  return section('nec', 'Necessario') + section('proc', 'Procedimento') + `
     <div class="note" style="line-height:1.6">
       <b>Come usare le {} nei passaggi</b><br>
-      • <b>{Nome ingrediente}</b>: scrivi il nome esattamente come nella ricetta sopra (es. <i>Aggiungi {Tris} al tampone</i>). Nella schermata d'uso al posto delle graffe compare la quantità calcolata.<br>
+      • <b>{Nome ingrediente}</b>: scrivi il nome esattamente come nella ricetta (es. <i>Aggiungi {Tris} al tampone</i>). Nella schermata d'uso compare il nome con la quantità calcolata.<br>
       • <b>{campo}</b>: una parola che non è un ingrediente (es. <i>Data {data}</i>) diventa un campo da compilare quando usi il protocollo.<br>
       • Maiuscole e spazi contano: <i>{tris}</i> non trova <i>Tris</i>.<br>
-      • Usa ↑ e ↓ per mettere i blocchi nell'ordine del protocollo.
-    </div>
-  </fieldset>`;
+      • Usa ↑ e ↓ per l'ordine, e il menu «Sezione» per spostare un blocco tra Necessario e Procedimento.
+    </div>`;
 }
 // versione per compilare: passaggi numerati, tabelle da riempire, ricette con il loro volume
 function blocksFillHTML(rc){
   const bl = getBlocks(rc); if (!bl.length) return '';
-  let n = 0;
-  const items = bl.map((b, i) => {
-    if (b.type === 'recipe'){
-      const rec = protos.find(x => x.id === b.id); if (!rec) return '';
-      const rr = recipeDefaults(parseRecipe(rec.recipe));
-      return `<div><div><b>${esc(rec.title)}</b> · volume <input data-impf="${i}" type="number" step="any" value="${b.vol}" style="width:110px"> ${esc(rr.base.unit)}</div>
-        <div id="imp-${i}">${recipeTableHTML(rr, b.vol)}</div></div>`;
-    }
-    n++;
-    // {Ingrediente} diventa la quantità calcolata; altre {parole} restano campi da compilare
-    const txt = esc(b.text || '').replace(/\{([^{}]+)\}/g, (m, k) => `<b class="calcq" data-calc="${k.trim()}">{${k.trim()}}</b>`);
-    const head = `<div>${n}. ${txt}</div>`;
-    return (b.type === 'table' && colsOf(b).length) ? `<div>${head}${stepTableHTML(b, i)}</div>` : `<div>${head}</div>`;
-  }).join('');
-  return `<div style="display:grid;gap:12px"><h3 style="margin:8px 0 0;font-size:14px">Passaggi</h3>${items}</div>`;
+  const renderSec = (key, title) => {
+    let n = 0;
+    const parts = bl.map((b, i) => ({b, i})).filter(x => x.b.sec === key).map(({b, i}) => {
+      if (b.type === 'recipe'){
+        const rec = protos.find(x => x.id === b.id); if (!rec) return '';
+        const rr = recipeDefaults(parseRecipe(rec.recipe));
+        return `<div><div><b>${esc(rec.title)}</b> · volume <input data-impf="${i}" type="number" step="any" value="${b.vol}" style="width:110px"> ${esc(rr.base.unit)}</div>
+          <div id="imp-${i}">${recipeTableHTML(rr, b.vol)}</div></div>`;
+      }
+      n++;
+      // {Ingrediente} diventa nome e quantità calcolata; altre {parole} restano campi da compilare
+      const txt = esc(b.text || '').replace(/\{([^{}]+)\}/g, (m, k) => `<b class="calcq" data-calc="${k.trim()}">{${k.trim()}}</b>`);
+      const head = `<div>${key === 'proc' ? n + '. ' : ''}${txt}</div>`;
+      return (b.type === 'table' && colsOf(b).length) ? `<div>${head}${stepTableHTML(b, i)}</div>` : `<div>${head}</div>`;
+    }).join('');
+    return parts ? `<div style="display:grid;gap:10px"><h3 style="margin:8px 0 0;font-size:14px">${title}</h3>${parts}</div>` : '';
+  };
+  return renderSec('nec', 'Necessario') + renderSec('proc', 'Procedimento');
 }
 // stampa: stessi blocchi, con i valori inseriti nelle tabelle e i volumi scelti
 function blocksPrint(rc){
   const td = 'border:1px solid #999;padding:4px 6px';
-  let n = 0;
-  return getBlocks(rc).map((b, i) => {
-    if (b.type === 'recipe'){
-      const rec = protos.find(x => x.id === b.id); if (!rec) return '';
-      const rr = recipeDefaults(parseRecipe(rec.recipe));
-      const inp = document.querySelector(`[data-impf="${i}"]`);
-      const vol = inp ? (+inp.value || 0) : b.vol;
-      return `<h3>Ricetta: ${esc(rec.title)}</h3><p>Volume: ${fmtNum(vol)} ${esc(rr.base.unit)}</p>${recipeTableHTML(rr, vol)}`;
-    }
-    n++;
-    const filled = (b.text || '').replace(/\{([^{}]+)\}/g, (m, k) => {
-      const calc = document.querySelector(`[data-calc="${k.trim()}"]`);
-      if (calc) return calc.textContent;
-      const ph = document.querySelector(`[data-ph="${k.trim()}"]`);
-      return (ph && ph.value) ? ph.value : '______________';
-    });
-    let h = `<p><b>${n}.</b> ${esc(filled)}</p>`;
-    const cols = colsOf(b);
-    if (b.type === 'table' && cols.length){
-      const rowsHtml = [...Array(Math.max(1, +b.rows || 1))].map((_, r) => `<tr>${cols.map((c, ci) => {
-        const cell = document.querySelector(`[data-tbl="${i}"][data-r="${r}"][data-c="${ci}"]`);
-        return `<td style="${td};height:22px">${esc(cell ? cell.value : '')}</td>`;
-      }).join('')}</tr>`).join('');
-      h += `<table style="border-collapse:collapse;width:100%;margin:4px 0 10px"><tr>${cols.map(c => `<th style="${td};text-align:left">${esc(c)}</th>`).join('')}</tr>${rowsHtml}</table>`;
-    }
-    return h;
-  }).join('');
+  const renderSec = (key, title) => {
+    let n = 0;
+    const parts = getBlocks(rc).map((b, i) => ({b, i})).filter(x => x.b.sec === key).map(({b, i}) => {
+      if (b.type === 'recipe'){
+        const rec = protos.find(x => x.id === b.id); if (!rec) return '';
+        const rr = recipeDefaults(parseRecipe(rec.recipe));
+        const inp = document.querySelector(`[data-impf="${i}"]`);
+        const vol = inp ? (+inp.value || 0) : b.vol;
+        return `<h4>Ricetta: ${esc(rec.title)}</h4><p>Volume: ${fmtNum(vol)} ${esc(rr.base.unit)}</p>${recipeTableHTML(rr, vol)}`;
+      }
+      n++;
+      const filled = (b.text || '').replace(/\{([^{}]+)\}/g, (m, k) => {
+        const calc = document.querySelector(`[data-calc="${k.trim()}"]`);
+        if (calc) return calc.textContent;
+        const ph = document.querySelector(`[data-ph="${k.trim()}"]`);
+        return (ph && ph.value) ? ph.value : '______________';
+      });
+      let h = `<p>${key === 'proc' ? `<b>${n}.</b> ` : ''}${esc(filled)}</p>`;
+      const cols = colsOf(b);
+      if (b.type === 'table' && cols.length){
+        const rowsHtml = [...Array(Math.max(1, +b.rows || 1))].map((_, r) => `<tr>${cols.map((c, ci) => {
+          const cell = document.querySelector(`[data-tbl="${i}"][data-r="${r}"][data-c="${ci}"]`);
+          return `<td style="${td};height:22px">${esc(cell ? cell.value : '')}</td>`;
+        }).join('')}</tr>`).join('');
+        h += `<table style="border-collapse:collapse;width:100%;margin:4px 0 10px"><tr>${cols.map(c => `<th style="${td};text-align:left">${esc(c)}</th>`).join('')}</tr>${rowsHtml}</table>`;
+      }
+      return h;
+    }).join('');
+    return parts ? `<h3>${title}</h3>${parts}` : '';
+  };
+  return renderSec('nec', 'Necessario') + renderSec('proc', 'Procedimento');
 }
 
 function recipeEditorHTML(r, withSteps = true){
@@ -743,6 +758,7 @@ function syncDraft(p){
     p.recipe = JSON.stringify({
       base: {label: 'Volume finale', value: +$('rcBaseVal').value || 1, unit: $('rcBaseUnit').value.trim() || 'ml'},
       samples: $('rcSamples').checked,
+      own: $('rcOwn') ? $('rcOwn').checked : true,
       fill: $('rcFill') ? $('rcFill').value : 'h2o',
       items,
       steps,
@@ -975,7 +991,8 @@ function protoHTML(){
   if (protoMode === 'edit'){
     return `<section class="panel" style="padding:12px;display:grid;gap:8px">
       <label class="note">Titolo <input id="protoTitleEd" type="text" value="${esc(p.title)}" maxlength="120" style="width:100%"></label>
-      ${recipeEditorHTML(recipeDefaults(parseRecipe(p.recipe)), false)}
+      <label class="note" style="display:flex;gap:6px;align-items:center"><input id="rcOwn" type="checkbox" ${parseRecipe(p.recipe).own === false ? '' : 'checked'}> Ha una ricetta iniziale (ingredienti e calcoli)</label>
+      <div id="rcWrap" ${parseRecipe(p.recipe).own === false ? 'hidden' : ''}>${recipeEditorHTML(recipeDefaults(parseRecipe(p.recipe)), false)}</div>
       ${blocksEditorHTML(recipeDefaults(parseRecipe(p.recipe)))}
       ${toolsEditorHTML(recipeDefaults(parseRecipe(p.recipe)))}
       <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -2459,7 +2476,7 @@ root.addEventListener('click', e => {
     }
     if (['blkmenu','blkadd','blkdel','blkup','blkdown'].includes(pa.dataset.protoAct)){
       const p = protos.find(x => x.id === protoOpen); if (!p) return;
-      if (pa.dataset.protoAct === 'blkmenu'){ const m = $('blkMenu'); if (m) m.hidden = !m.hidden; return; }
+      if (pa.dataset.protoAct === 'blkmenu'){ const m = $('blkMenu-' + pa.dataset.sec); if (m) m.hidden = !m.hidden; return; }
       syncDraft(p);
       const r = recipeDefaults(parseRecipe(p.recipe));
       const bl = getBlocks(r);
@@ -2468,12 +2485,13 @@ root.addEventListener('click', e => {
       if (act === 'blkadd'){
         const t = pa.dataset.t;
         if (t === 'recipe'){
-          const sel = $('blkRecSel'); const rec = sel && protos.find(x => x.id === sel.value);
+          const sel = $('blkRecSel-' + (pa.dataset.sec || 'proc')); const rec = sel && protos.find(x => x.id === sel.value);
           if (!rec){ flash('Scegli una ricetta dal menu.'); return; }
           bl.push({type: 'recipe', id: rec.id, vol: recipeDefaults(parseRecipe(rec.recipe)).base.value});
         } else if (t === 'table') bl.push({type: 'table', text: '', cols: '', rows: 3});
         else bl.push({type: 'text', text: ''});
       }
+      if (act === 'blkadd') bl[bl.length - 1].sec = pa.dataset.sec || 'proc';
       if (act === 'blkdel') bl.splice(i, 1);
       if (act === 'blkup' && i > 0) [bl[i-1], bl[i]] = [bl[i], bl[i-1]];
       if (act === 'blkdown' && i < bl.length - 1) [bl[i], bl[i+1]] = [bl[i+1], bl[i]];
@@ -2580,6 +2598,7 @@ root.addEventListener('keydown', e => {
 
 root.addEventListener('change', e => {
   const t0 = e.target;
+  if (t0.id === 'rcOwn'){ $('rcWrap').hidden = !t0.checked; return; }
   if (t0.id === 'protoFile'){ importProtos(t0.files[0]); t0.value = ''; return; }
   if (t0.closest && (t0.closest('[data-rc-row]') || t0.id === 'rcFill' || t0.id === 'rcBaseVal' || t0.id === 'rcBaseUnit')) refreshRecipeEdit();
   if (t0.dataset.bkField){
