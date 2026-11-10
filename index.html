@@ -470,7 +470,8 @@ function recipeDefaults(r){
     steps: Array.isArray(r.steps) ? r.steps : [],
     imports: Array.isArray(r.imports) ? r.imports : [],
     blocks: Array.isArray(r.blocks) ? r.blocks : undefined,
-    tools: Array.isArray(r.tools) ? r.tools : []
+    tools: Array.isArray(r.tools) ? r.tools : [],
+    fill: r.fill !== undefined ? r.fill : 'h2o'
   };
 }
 const VOL_F = {'µl':0.001, 'ml':1, 'l':1000};          // in millilitri
@@ -494,14 +495,23 @@ function calcItems(r, target, n){
     const value = it.mode === 'sample' ? q * n : (it.mode === 'fixed' ? q : q * k);
     return {name: it.name, unit: it.unit || '', value};
   });
-  // H2O: ciò che resta del volume finale dopo tutti gli ingredienti liquidi. Sta sempre in fondo.
-  if (out.length){
-    const used = out.reduce((s, o) => {
-      if (o.dil) return s + (Number.isFinite(o.value) ? o.value : 0);
-      if (VOL_F[o.unit] !== undefined) return s + (Number.isFinite(o.value) ? o.value * VOL_F[o.unit] : 0);
-      return s;
-    }, 0);
+  // quanto occupa ogni ingrediente liquido, in ml
+  const usedOf = o => {
+    if (o.dil) return Number.isFinite(o.value) ? o.value : 0;
+    if (VOL_F[o.unit] !== undefined) return Number.isFinite(o.value) ? o.value * VOL_F[o.unit] : 0;
+    return 0;
+  };
+  // ingrediente scelto "a volume": prende tutto ciò che resta del volume finale
+  const fi = (r.fill !== undefined && r.fill !== 'h2o' && out[+r.fill]) ? +r.fill : null;
+  if (fi !== null){
+    const used = out.reduce((s, o, i) => i === fi ? s : s + usedOf(o), 0);
     const rest = totalMl - used;
+    out[fi] = {...out[fi], unit: 'ml', value: rest, warn: rest < 0, filler: true};
+    return out;
+  }
+  // altrimenti: H2O = ciò che resta, sempre in fondo
+  if (out.length){
+    const rest = totalMl - out.reduce((s, o) => s + usedOf(o), 0);
     out.push({name: rest < 0 ? 'H2O: volume insufficiente' : 'H2O (q.b. a volume)', unit: 'ml', value: rest, warn: rest < 0});
   }
   return out;
@@ -610,7 +620,9 @@ function blocksFillHTML(rc){
         <div id="imp-${i}">${recipeTableHTML(rr, b.vol)}</div></div>`;
     }
     n++;
-    const head = `<div>${n}. ${esc(b.text || '')}</div>`;
+    // {Ingrediente} diventa la quantità calcolata; altre {parole} restano campi da compilare
+    const txt = esc(b.text || '').replace(/\{([^{}]+)\}/g, (m, k) => `<b class="calcq" data-calc="${k.trim()}">{${k.trim()}}</b>`);
+    const head = `<div>${n}. ${txt}</div>`;
     return (b.type === 'table' && colsOf(b).length) ? `<div>${head}${stepTableHTML(b, i)}</div>` : `<div>${head}</div>`;
   }).join('');
   return `<div style="display:grid;gap:12px"><h3 style="margin:8px 0 0;font-size:14px">Passaggi</h3>${items}</div>`;
@@ -628,7 +640,13 @@ function blocksPrint(rc){
       return `<h3>Ricetta: ${esc(rec.title)}</h3><p>Volume: ${fmtNum(vol)} ${esc(rr.base.unit)}</p>${recipeTableHTML(rr, vol)}`;
     }
     n++;
-    let h = `<p><b>${n}.</b> ${esc(b.text || '')}</p>`;
+    const filled = (b.text || '').replace(/\{([^{}]+)\}/g, (m, k) => {
+      const calc = document.querySelector(`[data-calc="${k.trim()}"]`);
+      if (calc) return calc.textContent;
+      const ph = document.querySelector(`[data-ph="${k.trim()}"]`);
+      return (ph && ph.value) ? ph.value : '______________';
+    });
+    let h = `<p><b>${n}.</b> ${esc(filled)}</p>`;
     const cols = colsOf(b);
     if (b.type === 'table' && cols.length){
       const rowsHtml = [...Array(Math.max(1, +b.rows || 1))].map((_, r) => `<tr>${cols.map((c, ci) => {
@@ -657,6 +675,7 @@ function recipeEditorHTML(r, withSteps = true){
       <select data-rc="ciu">${cu(it.ciu || 'M')}</select>
       <input data-rc="cf" type="number" step="any" value="${it.cf ?? ''}" placeholder="Cf (finale)">
       <select data-rc="cfu">${cu(it.cfu || 'mM')}</select>
+      <span class="note" data-rcout="${i}" style="flex:1 1 130px;font-weight:650;color:var(--fg)"></span>
       <button type="button" class="x trash" data-proto-act="rcdel" data-i="${i}" aria-label="Togli" title="Togli">✕</button>
     </div>`).join('');
   const stepRows = r.steps.map((st, i) => `<div class="rcrow" data-st="${i}">
@@ -676,8 +695,14 @@ function recipeEditorHTML(r, withSteps = true){
       <label class="note">Valore base <input id="rcBaseVal" type="number" step="any" value="${r.base.value}"></label>
       <label class="note">Unità <input id="rcBaseUnit" type="text" value="${esc(r.base.unit)}"></label>
     </div>
+    <label class="note" style="display:flex;gap:6px;align-items:center">Si va a volume con
+      <select id="rcFill">
+        <option value="h2o" ${(r.fill === undefined || r.fill === 'h2o') ? 'selected' : ''}>H2O (automatico)</option>
+        ${r.items.map((it, i) => `<option value="${i}" ${String(r.fill) === String(i) ? 'selected' : ''}>${esc(it.name || 'Ingrediente ' + (i + 1))}</option>`).join('')}
+      </select></label>
     <label class="note" style="display:flex;gap:6px;align-items:center"><input id="rcSamples" type="checkbox" ${r.samples ? 'checked' : ''}> Ci sono campioni (il protocollo chiederà il numero)</label>
     ${rows || '<div class="empty">Nessun ingrediente ancora.</div>'}
+    <div class="note" id="rcH2O" style="font-weight:650;color:var(--fg)"></div>
     <div><button type="button" class="btn" data-proto-act="rcadd">+ Ingrediente</button></div>
     <div class="note">Cambia con il volume: quantità proporzionale al valore base. Per campione: quantità × numero di campioni. Fisso: quantità uguale sempre. Diluizione: inserisci la concentrazione iniziale (Ci) e quella finale (Cf) con la stessa unità (M, mM, µM, nM, % oppure X). Il programma calcola da solo quanto stock serve sul volume finale con Ci·Vi = Cf·Vf, e l'H2O è il resto. Esempi: 10X → 1X; 10% → 2%.</div>
     ${withSteps ? stepsEditor : ''}
@@ -707,6 +732,7 @@ function syncDraft(p){
     p.recipe = JSON.stringify({
       base: {label: $('rcBaseLabel').value.trim() || 'Volume', value: +$('rcBaseVal').value || 1, unit: $('rcBaseUnit').value.trim() || 'ml'},
       samples: $('rcSamples').checked,
+      fill: $('rcFill') ? $('rcFill').value : 'h2o',
       items,
       steps,
       tools: [...document.querySelectorAll('[data-tool]')].map(row => ({
@@ -722,7 +748,45 @@ function syncDraft(p){
   }
 }
 // tabella delle quantità aggiornata mentre si cambia volume o campioni
+// tabella della ricetta in modifica: quantità per ogni ingrediente e riga H2O/a volume
+function refreshRecipeEdit(){
+  if (!$('rcBaseVal')) return;
+  const items = [...document.querySelectorAll('[data-rc-row]')].map(row => ({
+    name: row.querySelector('[data-rc="name"]').value.trim(),
+    qty: +row.querySelector('[data-rc="qty"]').value || 0,
+    unit: row.querySelector('[data-rc="unit"]').value.trim(),
+    mode: row.querySelector('[data-rc="mode"]').value,
+    ci: +row.querySelector('[data-rc="ci"]').value || 0,
+    ciu: row.querySelector('[data-rc="ciu"]').value,
+    cf: +row.querySelector('[data-rc="cf"]').value || 0,
+    cfu: row.querySelector('[data-rc="cfu"]').value
+  }));
+  const r = {base: {label: '', value: +$('rcBaseVal').value || 1, unit: $('rcBaseUnit').value.trim() || 'ml'},
+             items, fill: $('rcFill') ? $('rcFill').value : 'h2o'};
+  const out = calcItems(r, r.base.value, 1);
+  items.forEach((_, i) => {
+    const el = document.querySelector(`[data-rcout="${i}"]`);
+    if (el){ const o = out[i]; el.textContent = o ? (Number.isFinite(o.value) ? `${fmtNum(o.value)} ${o.unit}` : 'unità diverse') : ''; }
+  });
+  const extra = out[items.length];
+  const h = $('rcH2O');
+  if (h) h.textContent = (extra && !extra.filler) ? `${extra.name}: ${fmtNum(extra.value)} ml` : '';
+}
+// quantità inserite nei passaggi tra graffe, es. {Tris}: si aggiornano con il volume scelto
+function refreshStepCalcs(){
+  const p = protos.find(x => x.id === protoOpen); if (!p) return;
+  const r = recipeDefaults(parseRecipe(p.recipe));
+  const target = $('rcTarget') ? (+$('rcTarget').value || r.base.value) : r.base.value;
+  const n = r.samples ? (+($('rcN') && $('rcN').value) || 1) : 1;
+  const all = calcItems(r, target, n);
+  document.querySelectorAll('[data-calc]').forEach(el => {
+    const c = all.find(x => x.name === el.dataset.calc);
+    el.textContent = c ? `${fmtNum(c.value)} ${c.unit}` : `{${el.dataset.calc}}`;
+  });
+}
 function refreshCalc(){
+  refreshRecipeEdit();
+  refreshStepCalcs();
   const p = protos.find(x => x.id === protoOpen); if (!p || !$('rcTarget')) return;
   const r = recipeDefaults(parseRecipe(p.recipe));
   const target = +$('rcTarget').value || r.base.value;
@@ -798,7 +862,7 @@ function protoHTML(){
       </div>
       <div class="note" style="margin-bottom:8px">${protoTab === 'recipes'
         ? 'Ricette: volume finale e ingredienti con concentrazione stock e finale. Le quantità si ricalcolano dal volume, e l’acqua (H2O) è quella che serve per arrivare al volume.'
-        : 'Nel testo scrivi tra graffe i campi da compilare, per esempio {data} o {operatore}.'}</div>
+        : 'Nei passaggi scrivi tra graffe un ingrediente per avere la quantità, per esempio {Tris}, oppure un campo da compilare, per esempio {data}.'}</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
         <input id="protoTitle" type="text" placeholder="Titolo del nuovo protocollo" maxlength="120" style="flex:1;min-width:160px;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:6px 8px;color:var(--fg)">
         <button type="button" class="btn" id="protoNew">${protoTab === 'recipes' ? '+ Ricetta' : '+ Protocollo'}</button>
@@ -825,8 +889,6 @@ function protoHTML(){
       ${recipeEditorHTML(recipeDefaults(parseRecipe(p.recipe)), false)}
       ${blocksEditorHTML(recipeDefaults(parseRecipe(p.recipe)))}
       ${toolsEditorHTML(recipeDefaults(parseRecipe(p.recipe)))}
-      <label class="note">Testo del protocollo (i campi da compilare sono tra graffe, per esempio {data})
-        <textarea id="protoBody" rows="16" style="width:100%;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px;color:var(--fg)">${esc(p.body)}</textarea></label>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button type="button" class="btn" id="protoSave">Salva</button>
         <button type="button" class="btn" data-proto-act="use" data-id="${p.id}">Usa / PDF</button>
@@ -835,7 +897,9 @@ function protoHTML(){
     </section>`;
   }
   const rc = recipeDefaults(parseRecipe(p.recipe));
-  const keys = [...new Set([...p.body.matchAll(/\{([^{}]+)\}/g)].map(m => m[1].trim()))];
+  const allText = [p.body, ...getBlocks(rc).map(b => b.text || '')].join(' ');
+  const ingNames = rc.items.map(it => it.name);
+  const keys = [...new Set([...allText.matchAll(/\{([^{}]+)\}/g)].map(m => m[1].trim()))].filter(k => !ingNames.includes(k));
   return `<section class="panel" style="padding:12px;display:grid;gap:10px">
     <h2 style="margin:0;font-size:15px">${esc(p.title)}</h2>
     ${(rc.items.length || rc.imports.length) ? `<div style="display:flex;gap:10px;flex-wrap:wrap">
@@ -889,13 +953,22 @@ function grpPath(id){
   while (g){ parts.unshift(g.name); g = g.parentId ? grpById(g.parentId) : null; }
   return parts.join(' › ');
 }
-function labName(id){ return id === 'none' ? (localStorage.getItem('noneLab') || 'Senza laboratorio') : (grpPath(id) || 'Laboratorio'); }
-// rinomina il laboratorio dei calendari senza gruppo (il nome resta su questo dispositivo)
-function renameNone(){
+// nomi condivisi tra tutti i dispositivi (tabella app_settings)
+let appNames = {};
+async function loadAppSettings(){
+  const {data, error} = await sb.from('app_settings').select('*');
+  if (error) return;   // tabella non ancora creata: restano i nomi predefiniti
+  appNames = Object.fromEntries((data || []).map(r => [r.key, r.value]));
+}
+function labName(id){ return id === 'none' ? (appNames.noneLab || 'Senza laboratorio') : (grpPath(id) || 'Laboratorio'); }
+// rinomina il laboratorio dei calendari senza gruppo: il nome è salvato nel database
+async function renameNone(){
   const n = (prompt('Nuovo nome per i calendari senza laboratorio:', labName('none')) || '').trim();
   if (!n) return;
-  localStorage.setItem('noneLab', n);
+  appNames.noneLab = n;
   render();
+  const {error} = await sb.from('app_settings').upsert({key: 'noneLab', value: n});
+  if (error) flash('Nome non salvato: esegui supabase-nomi.sql su Supabase.');
 }
 const isVis = () => true;   // i calendari in lista sono già quelli che questo dispositivo può vedere
 function countCals(gid){
@@ -922,6 +995,7 @@ async function loadCalendars(){
     if (!error && data) data.forEach(r => map.set(r.id, calFromDb(r)));
   }
   calendars = [...map.values()].sort((a,b) => a.position - b.position);
+  await loadAppSettings();
   groups = g.data.map(grpFromDb);
   return true;
 }
@@ -1299,8 +1373,8 @@ async function deleteGroupById(id){
 }
 
 // apre la finestra per scegliere giorno e ore del protocollo
-function openProtoPlace(){
-  const p = protos.find(x => x.id === protoOpen); if (!p) return;
+function openProtoPlace(pid = protoOpen){
+  const p = protos.find(x => x.id === pid); if (!p) return;
   schedId = null;
   schedProto = p.id;
   $('schTitle').textContent = `Metti “${p.title}” in calendario`;
@@ -1973,6 +2047,10 @@ function calShellHTML(){
             <button type="button" class="btn" id="addBtn">Aggiungi</button>
           </div>
           <div class="list" id="list" data-drop="list"></div>
+          <div class="add">
+            <select id="protoPick" class="full" aria-label="Protocollo da mettere in calendario"></select>
+            <button type="button" class="btn full" id="protoPickBtn">📅 Metti protocollo in calendario</button>
+          </div>
         </aside>
         <aside class="panel">
           <h2>Strumentazione da prenotare <span id="bkCount" class="note"></span></h2>
@@ -2012,6 +2090,7 @@ function renderCalParts(){
   $('cal').innerHTML = weekView === 'week' ? renderWeek() : renderMonth();
   renderList();
   renderBookings();
+  rebuild($('protoPick'), protos.filter(p => p.kind !== 'recipe').map(p => `<option value="${p.id}">${esc(p.title)}</option>`).join('') || '<option value="">Nessun protocollo</option>');
   if (!bkDateManual && $('bkWeekday').value !== '' && document.activeElement !== $('bkDate')){
     $('bkDate').value = weekdayDate($('bkWeekday').value);
   }
@@ -2167,6 +2246,12 @@ root.addEventListener('click', e => {
   if (e.target.closest('#protoNew')){ protoNew(); return; }
   if (e.target.closest('#protoSave')){ protoSave(); return; }
   if (e.target.closest('#protoPlace')){ openProtoPlace(); return; }
+  if (e.target.closest('#protoPickBtn')){
+    const pid = $('protoPick').value;
+    if (!pid){ flash('Scegli prima un protocollo dal menu.'); return; }
+    openProtoPlace(pid);
+    return;
+  }
   if (e.target.closest('#protoClose')){ protoOpen = null; render(); return; }
   if (e.target.closest('#protoPrint')){
     const p = protos.find(x => x.id === protoOpen); if (!p) return;
@@ -2323,6 +2408,7 @@ window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () 
 
 root.addEventListener('input', e => {
   if (e.target.id === 'rcTarget' || e.target.id === 'rcN') refreshCalc();
+  if (e.target.closest('[data-rc-row]') || e.target.id === 'rcBaseVal' || e.target.id === 'rcBaseUnit') refreshRecipeEdit();
   if (e.target.hasAttribute('data-impf')) refreshImports();
 });
 
@@ -2336,6 +2422,7 @@ root.addEventListener('keydown', e => {
 
 root.addEventListener('change', e => {
   const t0 = e.target;
+  if (t0.closest && (t0.closest('[data-rc-row]') || t0.id === 'rcFill' || t0.id === 'rcBaseVal' || t0.id === 'rcBaseUnit')) refreshRecipeEdit();
   if (t0.dataset.bkField){
     const id = t0.closest('[data-bk]').dataset.bk;
     const b = bookings.find(x => x.id === id); if (!b) return;
@@ -2449,6 +2536,7 @@ sb.channel('calendario')
   .on('postgres_changes', {event:'*', schema:'public', table:'tasks'}, () => loadAll())
   .on('postgres_changes', {event:'*', schema:'public', table:'categories'}, () => loadAll())
   .on('postgres_changes', {event:'*', schema:'public', table:'bookings'}, () => loadAll())
+  .on('postgres_changes', {event:'*', schema:'public', table:'app_settings'}, async () => { await loadAppSettings(); render(); })
   .on('postgres_changes', {event:'*', schema:'public', table:'protocols'}, () => loadAll())
   .on('postgres_changes', {event:'*', schema:'public', table:'calendars'}, async () => { await loadCalendars(); render(); })
   .on('postgres_changes', {event:'*', schema:'public', table:'groups'}, async () => { await loadCalendars(); render(); })
