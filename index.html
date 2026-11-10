@@ -792,7 +792,7 @@ function refreshStepCalcs(){
   const all = calcItems(r, target, n);
   document.querySelectorAll('[data-calc]').forEach(el => {
     const c = all.find(x => x.name === el.dataset.calc);
-    el.textContent = c ? `${fmtNum(c.value)} ${c.unit}` : `{${el.dataset.calc}}`;
+    el.textContent = c ? `${el.dataset.calc}: ${fmtNum(c.value)} ${c.unit}` : `{${el.dataset.calc}}`;
   });
 }
 function refreshCalc(){
@@ -1465,6 +1465,7 @@ async function savePlaceProto(){
     slot: null, done: false,
     category: null, kind: 'booking', created_at: now + k + 1, calendar_id: curCal
   }));
+  rows.slice(1).forEach(r => { r.link = rows[0].id; });
   closeSched();
   rows.forEach(r => tasks.push(taskFromDb(r)));
   render();
@@ -1576,7 +1577,7 @@ function setBgImage(){
 function taskFromDb(r){
   let slot = r.slot || null;
   if (LEGACY_SLOT[slot]) slot = LEGACY_SLOT[slot];
-  return {id:r.id, title:r.title, day:r.day, slot, done:!!r.done, category:r.category||null, kind:r.kind||null, createdAt:r.created_at||0};
+  return {id:r.id, title:r.title, day:r.day, slot, done:!!r.done, category:r.category||null, kind:r.kind||null, link:r.link||null, createdAt:r.created_at||0};
 }
 function catFromDb(r){ return {id:r.id, name:r.name, color:r.color, position:r.position||0}; }
 function bkFromDb(r){ return {id:r.id, title:r.title, day:r.day||null, useDay:r.use_day||null, slot:r.slot||null, done:!!r.done, details:r.details||'', createdAt:r.created_at||0}; }
@@ -1605,12 +1606,28 @@ const taskById = id => tasks.find(x => x.id === id);
 
 async function saveChange(id, patch){
   const t = taskById(id); if (!t) return;
+  const isProto = !!(t.kind && t.kind.startsWith('proto:'));
+  const oldDay = t.day;
+  // le prenotazioni collegate a un protocollo seguono i suoi spostamenti
+  const linked = (isProto && 'day' in patch && patch.day !== oldDay) ? tasks.filter(x => x.link === id) : [];
   Object.assign(t, patch);
   render();
   const dbPatch = {};
   for (const k of ['title','done','day','slot','category']) if (k in patch) dbPatch[k] = patch[k];
   const {error} = await dbOp(curCal, 'tasks', 'update', {id, data: dbPatch});
-  if (error){ if (!pinError(error)) flash('Modifica non salvata, riprova.'); loadAll(); }
+  if (error){ if (!pinError(error)) flash('Modifica non salvata, riprova.'); loadAll(); return; }
+  if (!linked.length) return;
+  if (!patch.day){
+    // protocollo tolto dal calendario: spariscono anche le sue prenotazioni
+    tasks = tasks.filter(x => x.link !== id); render();
+    await Promise.all(linked.map(r => dbOp(curCal, 'tasks', 'delete', {id: r.id})));
+  } else if (oldDay){
+    // protocollo spostato: le prenotazioni si spostano della stessa distanza
+    const delta = Math.round((new Date(patch.day + 'T00:00') - new Date(oldDay + 'T00:00')) / 86400000);
+    linked.forEach(r => { r.day = fmt(addDays(new Date(r.day + 'T00:00'), delta)); });
+    render();
+    await Promise.all(linked.map(r => dbOp(curCal, 'tasks', 'update', {id: r.id, data: {day: r.day}})));
+  }
 }
 async function addTask(title, category){
   title = title.trim(); if (!title || !curCal) return;
@@ -1621,9 +1638,14 @@ async function addTask(title, category){
   if (error){ if (!pinError(error)) flash('Attività non salvata, riprova.'); loadAll(); }
 }
 async function removeTask(id){
-  tasks = tasks.filter(t => t.id !== id); if (selectedId === id) selectedId = null; render();
-  const {error} = await dbOp(curCal, 'tasks', 'delete', {id});
-  if (error){ if (!pinError(error)) flash('Eliminazione non riuscita, riprova.'); loadAll(); }
+  const linked = tasks.filter(t => t.link === id);
+  tasks = tasks.filter(t => t.id !== id && t.link !== id);
+  if (selectedId === id) selectedId = null;
+  render();
+  const results = await Promise.all([dbOp(curCal, 'tasks', 'delete', {id}),
+    ...linked.map(r => dbOp(curCal, 'tasks', 'delete', {id: r.id}))]);
+  const err = results.find(r => r.error);
+  if (err){ if (!pinError(err.error)) flash('Eliminazione non riuscita, riprova.'); loadAll(); }
 }
 function move(id, day, slot){
   selectedId = null;
@@ -1631,7 +1653,7 @@ function move(id, day, slot){
   // primo posizionamento di un protocollo nel calendario: nascono i promemoria delle strumentazioni
   const firstPlacement = !!(t && !t.day && day && t.kind && t.kind.startsWith('proto:'));
   saveChange(id, {day: day || null, slot: slot || null});
-  if (firstPlacement) addToolReminders(t.kind.slice(6), day);
+  if (firstPlacement) addToolReminders(t.kind.slice(6), day, t.id);
 }
 // scrive il nome di un protocollo: entra in "Da organizzare" come attività collegata
 async function addProtoToList(){
@@ -1647,7 +1669,7 @@ async function addProtoToList(){
   else flash('Protocollo in “Da organizzare”: trascinalo nel calendario.');
 }
 // crea un promemoria "Prenotare: …" per ogni strumentazione del protocollo, sul giorno calcolato
-async function addToolReminders(protoId, day){
+async function addToolReminders(protoId, day, taskId){
   const p = protos.find(x => x.id === protoId); if (!p) return;
   const rc = recipeDefaults(parseRecipe(p.recipe));
   const now = Date.now();
@@ -1656,6 +1678,7 @@ async function addToolReminders(protoId, day){
     day: fmt(addDays(new Date(day + 'T00:00'), -(+tl.lead || 0))),
     slot: null, done: false, category: null, kind: 'booking', created_at: now + k + 1, calendar_id: curCal
   }));
+  rows.forEach(r => { r.link = taskId; });
   if (!rows.length) return;
   rows.forEach(r => tasks.push(taskFromDb(r)));
   render();
