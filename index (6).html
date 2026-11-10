@@ -1,0 +1,1232 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Calendario condiviso</title>
+<style>
+:root{
+  --bg:#e8f6ef; --panel:#ffffff; --fg:#3a1d2b; --muted:#6f7f76; --line:#cfe6da;
+  --accent:#c2457a; --accent-soft:#fbdde9; --today:#e0f4ea; --done:#8aa196; --day:#2f6b52; --day-bg:#d6eee2;
+  --all-bg:#f1faf5; --am-bg:#fbfefc; --pm-bg:#eef7f2; --gut:44px;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#1f141a; --panel:#2a1c24; --fg:#f7e6ee; --muted:#b592a4; --line:#4a2f3d;
+    --accent:#f08cb4; --accent-soft:#4a2536; --today:#3d2230; --done:#7d6070; --day:#c9a6f0; --day-bg:#2e2440;
+    --all-bg:#3a2330; --am-bg:#261b22; --pm-bg:#2a2032; color-scheme:dark;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;
+  padding:12px max(12px,env(safe-area-inset-right,0px)) 12px max(12px,env(safe-area-inset-left,0px))}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.wrap{max-width:1400px;margin:0 auto;display:grid;gap:12px;grid-template-columns:minmax(0,1fr)}
+.btn{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px 10px}
+.btn:hover{border-color:var(--accent)}
+.btn[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--panel)}
+.btn.danger{border-color:var(--accent);color:var(--accent)}
+.btn.sm{padding:3px 8px;font-size:12px}
+.btn.gear{width:34px;height:34px;padding:0;display:grid;place-items:center;font-size:16px;border-radius:50%}
+.btn:disabled{opacity:.4}
+input,select{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:6px 8px;color:var(--fg);min-width:0}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;min-width:0}
+.empty{color:var(--muted);font-size:13px;padding:8px 2px}
+.note{font-size:12px;color:var(--muted)}
+#status{min-height:1.4em;color:var(--muted);font-size:13px}
+
+/* barra in alto */
+#top{display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:8px 10px}
+#top .ttl{font-weight:650;font-size:15px}
+.spacer{flex:1}
+
+/* home: i laboratori come schede grandi */
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px 18px;text-align:left;display:flex;flex-direction:column;gap:6px}
+.card strong{font-size:17px}
+.card:hover{border-color:var(--accent)}
+.sub{font-size:13px;color:var(--muted);margin:14px 2px 6px;font-weight:600}
+.calbtns{display:flex;flex-wrap:wrap;gap:8px}
+.calbtn{background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:8px 16px}
+.calbtn:hover{border-color:var(--accent)}
+
+/* calendario: barra della settimana */
+.weekbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:8px 10px;margin-bottom:10px}
+#period{font-weight:650;min-width:170px;text-align:center}
+.calgrid{display:grid;gap:12px;grid-template-columns:minmax(0,1fr) 290px;align-items:start}
+@media (max-width:900px){.calgrid{grid-template-columns:minmax(0,1fr)}}
+.left{display:grid;gap:12px;min-width:0}
+.side{display:grid;gap:12px;min-width:0}
+.scroll{padding:8px}
+.panel h2{font-size:14px;margin:0;padding:10px 12px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:8px}
+
+/* settimana */
+.week{display:grid;gap:6px;width:100%;grid-template-columns:repeat(7,minmax(0,1fr));align-items:start}
+.dcol{min-width:0;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--panel);display:flex;flex-direction:column;min-height:320px}
+.dayhead{padding:6px 8px;display:flex;align-items:center;justify-content:space-between;gap:4px;font-size:12px;color:var(--day);background:var(--day-bg);font-weight:650}
+.dayhead .dname{display:flex;flex-direction:column;line-height:1.1}
+.dayhead strong{font-size:16px;color:var(--fg)}
+.dayhead.is-today{background:var(--today)}
+.dtog{background:none;border:1px solid var(--line);border-radius:6px;padding:0 7px;font-size:12px;line-height:18px;color:var(--muted)}
+.dtog[aria-expanded="true"]{background:var(--accent);border-color:var(--accent);color:var(--panel)}
+.allday{padding:6px;display:flex;flex-direction:column;gap:6px;background:var(--all-bg);min-height:34px;border-bottom:1px solid var(--line)}
+.ov{padding:6px;display:flex;flex-direction:column;gap:6px;flex:1;min-height:240px}
+.none{color:var(--muted);text-align:center;padding:12px 0;font-size:12px}
+.item{display:flex;gap:6px;align-items:flex-start;background:var(--accent-soft);border-radius:6px;padding:5px 6px;font-size:13px;cursor:grab;min-width:0}
+.item.cat{background:color-mix(in srgb,var(--c) 25%,var(--panel));border-left:4px solid var(--c)}
+.item.done{background:transparent;border:1px dashed var(--line)}
+.item.done .ct{text-decoration:line-through;color:var(--done)}
+.item.sel,.block.sel{box-shadow:0 0 0 2px var(--accent)}
+.ibody{flex:1;min-width:0;display:flex;flex-direction:column}
+.ibody .ct{white-space:normal;word-break:break-word;line-height:1.25}
+.rng{font-size:11px;color:var(--muted);font-weight:600}
+
+/* tabella oraria del giorno aperto */
+.tl{position:relative;width:100%;margin:4px 0}
+.hl{position:absolute;left:0;width:var(--gut);padding-left:4px;font-size:11px;color:var(--muted);font-weight:600;transform:translateY(-7px)}
+.hline{position:absolute;left:var(--gut);right:0;border-top:1px solid var(--line)}
+.pl{position:absolute;left:0;right:0;font-size:11px;font-weight:650;color:var(--day);background:var(--day-bg);padding:3px 6px;line-height:16px}
+.block{position:absolute;border-radius:6px;padding:4px 6px;background:var(--accent-soft);overflow:hidden;cursor:grab;font-size:12.5px;display:flex;flex-direction:column;gap:2px;border:1px solid rgba(0,0,0,.06);box-shadow:0 1px 2px rgba(0,0,0,.05)}
+.block.cat{background:color-mix(in srgb,var(--c) 28%,var(--panel));border-left:4px solid var(--c)}
+.block.done{opacity:.6}
+.block.done .ct{text-decoration:line-through}
+.block .ct{white-space:normal;word-break:break-word;line-height:1.2}
+.block .rng{font-size:10.5px}
+.dragging{opacity:.4}
+.over{background:var(--accent-soft)!important}
+body.picking .ov,body.picking .allday,body.picking .tl,body.picking .mcell,body.picking #list{outline:1px dashed var(--accent);outline-offset:-3px}
+
+/* mese */
+.month{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;min-width:0}
+.month>*{background:var(--panel);min-width:0;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.mhead{padding:6px;font-size:12px;color:var(--day);background:var(--day-bg)!important;text-align:center;font-weight:650}
+.mcell{min-height:96px;padding:5px;display:flex;flex-direction:column;gap:4px;background:var(--all-bg)}
+.mcell.out{opacity:.45}
+.mcell.is-today{background:var(--today)!important}
+.mnum{font-size:12px;color:var(--muted);font-weight:600}
+
+/* elementi di liste e checklist */
+.chip{display:flex;align-items:center;gap:5px;background:var(--accent-soft);border-radius:6px;padding:3px 4px 3px 3px;font-size:12.5px;cursor:grab;user-select:none;min-width:0}
+.chip.cat{background:color-mix(in srgb,var(--c) 25%,var(--panel));border-left:4px solid var(--c)}
+.chip.done{background:transparent;border:1px dashed var(--line);color:var(--done)}
+.chip.done.cat{border-left:4px solid var(--c)}
+.chip.done .ct{text-decoration:line-through}
+.chip.sel{box-shadow:0 0 0 2px var(--accent)}
+.ct{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ck,.x{flex:none;border:0;background:none;padding:0;line-height:1;color:var(--muted);font-size:13px;width:16px;height:16px;display:grid;place-items:center;border-radius:4px}
+.ck{border:1px solid var(--muted);border-radius:4px;font-size:10px;color:var(--accent)}
+.x:hover,.ck:hover{color:var(--fg)}
+.list{padding:0 10px 10px;display:grid;gap:6px;min-height:100px}
+.add{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px;padding:10px}
+.add .full{grid-column:1/-1}
+.add .btn{background:var(--accent);border-color:var(--accent);color:var(--panel)}
+.grp-h{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:650;margin-top:8px}
+.grp-h .gcount{margin-left:auto;font-weight:400;color:var(--muted)}
+.dot{width:10px;height:10px;border-radius:50%;flex:none}
+.bkrow{display:grid;gap:4px;padding:6px;border:1px solid var(--line);border-radius:8px}
+.bkrow.done .ct{text-decoration:line-through;color:var(--done)}
+.bkrow .line{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.bkrow input[type=date],.bkrow input[type=time]{font-size:12px;padding:3px 5px}
+.bkrow .when{color:var(--muted);font-size:12px}
+
+/* modifica attività */
+#editor{display:none}
+#editor.on{display:block}
+.ed{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;padding:12px}
+.ed label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted);min-width:0}
+.ed label.inline{flex-direction:row;align-items:center;gap:8px;color:var(--fg);font-size:13px}
+.ed input,.ed select{width:100%}
+.ed input[type=checkbox]{width:auto}
+.ed input:disabled{opacity:.4}
+.edbtns{display:flex;flex-wrap:wrap;gap:8px;align-items:end;grid-column:1/-1}
+.edtitle{font-size:12px;color:var(--muted);padding:10px 12px 0}
+
+/* popup impostazioni */
+.modalback{position:fixed;inset:0;background:rgba(0,0,0,.35);display:grid;place-items:center;padding:12px;z-index:50}
+.modalback[hidden]{display:none}
+.modal{background:var(--panel);border:1px solid var(--line);border-radius:14px;max-width:980px;width:100%;max-height:92vh;overflow:auto}
+.mhead{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid var(--line)}
+.mhead h2{margin:0;font-size:15px}
+.setgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px;padding:12px}
+.setbox{display:flex;flex-direction:column;gap:8px;border:1px solid var(--line);border-radius:10px;padding:10px;min-width:0}
+.setbox h3{margin:0;font-size:13px}
+.setbox label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted)}
+.setbox input[type=text],.setbox input[type=url],.setbox select{width:100%}
+.setbox input[type=color]{width:42px;height:34px;padding:2px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
+.setbox .row{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.setbox .row select,.setbox .row input[type=text]{flex:1;min-width:120px}
+.swatches{display:flex;gap:8px;flex-wrap:wrap}
+.sw{width:30px;height:30px;border-radius:50%;border:2px solid var(--line);padding:0}
+body.hasimg .panel,body.hasimg #top{background:color-mix(in srgb,var(--panel) 88%,transparent)}
+
+/* telefono */
+@media (max-width:600px){
+  :root{--gut:34px}
+  body{padding:8px}
+  .week{gap:3px}
+  .dayhead{padding:4px 2px;flex-direction:column;align-items:center;font-size:10px}
+  .dayhead strong{font-size:13px}
+  .dtog{padding:0 4px}
+  .item{font-size:11px;padding:4px}
+  .block{font-size:11px;padding:3px 4px}
+  .hl{font-size:9px;padding-left:2px}
+  .pl{font-size:9px}
+  .ov{min-height:200px}
+}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <nav id="top" aria-label="Navigazione"></nav>
+  <div id="view"></div>
+  <div id="status"></div>
+
+  <div class="modalback" id="modal" hidden>
+    <div class="modal" role="dialog" aria-label="Impostazioni">
+      <div class="mhead"><h2>Impostazioni</h2><button class="btn" id="setClose">Chiudi</button></div>
+      <div class="setgrid">
+
+        <div class="setbox">
+          <h3>Calendario aperto</h3>
+          <label>Nome <input id="setName" type="text" maxlength="60"></label>
+          <div class="row"><button class="btn" id="setNameSave">Salva nome</button></div>
+          <label>Laboratorio / gruppo <select id="setGroup"></select></label>
+          <label>PIN (vuoto = nessun PIN) <input id="setCode" type="text" maxlength="30"></label>
+          <div class="row"><button class="btn" id="setCodeSave">Salva PIN</button></div>
+          <label style="flex-direction:row;align-items:center;gap:6px;color:var(--fg)"><input id="setHidden" type="checkbox"> Privato (nascosto, si apre con il PIN)</label>
+          <div class="note">Il PIN è una protezione leggera: il database lo mostra a chi vi accede.</div>
+          <div class="row"><button class="btn danger" id="setDelete">Elimina questo calendario</button></div>
+        </div>
+
+        <div class="setbox">
+          <h3>Gruppi e laboratori</h3>
+          <label>Nuovo gruppo <input id="grpName" type="text" maxlength="60" placeholder="Nome"></label>
+          <label>Dentro a <select id="grpParent"></select></label>
+          <div class="row"><button class="btn" id="grpAdd">Crea gruppo</button></div>
+          <label>Gestisci un gruppo <select id="grpSel"></select></label>
+          <div class="row">
+            <button class="btn" id="grpRename">Rinomina</button>
+            <button class="btn danger" id="grpDel">Elimina</button>
+          </div>
+          <div class="note">Un gruppo si può eliminare solo se è vuoto.</div>
+        </div>
+
+        <div class="setbox">
+          <h3>Categorie</h3>
+          <label>Categoria <select id="catSel"></select></label>
+          <div class="row">
+            <label style="flex-direction:row;align-items:center;gap:6px">Colore <input id="catColor" type="color" value="#c2457a"></label>
+            <button class="btn" id="catRename">Rinomina</button>
+            <button class="btn danger" id="catDel">Elimina</button>
+          </div>
+          <label>Nuova categoria</label>
+          <div class="row">
+            <input id="catName" type="text" placeholder="Nome" maxlength="60" aria-label="Nome nuova categoria">
+            <input id="catNewColor" type="color" value="#c2457a" aria-label="Colore nuova categoria">
+            <button class="btn" id="catAdd">Crea</button>
+          </div>
+        </div>
+
+        <div class="setbox">
+          <h3>Sfondo</h3>
+          <div class="swatches" aria-label="Colori di sfondo">
+            <button type="button" class="sw" data-bg-color="#e8f6ef" style="background:#e8f6ef" aria-label="Menta"></button>
+            <button type="button" class="sw" data-bg-color="#fdf4f7" style="background:#fdf4f7" aria-label="Rosa"></button>
+            <button type="button" class="sw" data-bg-color="#efe6fb" style="background:#efe6fb" aria-label="Lavanda"></button>
+            <button type="button" class="sw" data-bg-color="#e6f1fb" style="background:#e6f1fb" aria-label="Cielo"></button>
+            <button type="button" class="sw" data-bg-color="#f7f1e3" style="background:#f7f1e3" aria-label="Sabbia"></button>
+            <button type="button" class="sw" data-bg-color="#e5e5e5" style="background:#e5e5e5" aria-label="Grigio"></button>
+            <button type="button" class="sw" data-bg-color="#2b1f27" style="background:#2b1f27" aria-label="Scuro"></button>
+          </div>
+          <label style="flex-direction:row;align-items:center;gap:6px">Colore personalizzato <input id="bgColor" type="color" value="#e8f6ef"></label>
+          <label>Immagine (indirizzo https://…) <input id="bgUrl" type="url" placeholder="https://…"></label>
+          <div class="row">
+            <button class="btn" id="bgImg">Usa immagine</button>
+            <button class="btn" id="bgReset">Predefinito (menta)</button>
+          </div>
+          <div class="note">Vale solo per questo calendario e solo su questo dispositivo.</div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script>
+// ---- configurazione Supabase ----
+const SUPABASE_URL = 'https://mugzdzlyugjdprezcbac.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im11Z3pkemx5dWdqZHByZXpjYmFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM4ODg4MTQsImV4cCI6MjEwOTQ2NDgxNH0.ojM-G8vJRUXHI1deq3uPAvUcb3zJMbImcUd-jCdj44g';
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// ---- impostazioni della tabella oraria: modificabili qui ----
+const T0 = 8 * 60;    // inizio tabella: 08:00
+const T1 = 19 * 60;   // fine tabella: 19:00
+const PM = 13 * 60;   // inizio pomeriggio
+const ROW_H = 44;     // altezza di un'ora, in pixel
+const HEAD_H = 22;    // etichetta "Mattina" in cima
+const DIV_H = 22;     // etichetta "Pomeriggio" tra le due parti
+const LEGACY_SLOT = {am: '08:00-12:00', pm: '13:00-18:00'};
+const MAIN_ID = 'main';
+const DEFAULT_BG = '#e8f6ef';   // menta: sfondo predefinito, nella modalità chiara
+
+// ---- utilità ----
+const WD = ['Lun','Mar','Mer','Gio','Ven','Sab','Dom'];
+function pad(n){ return String(n).padStart(2,'0'); }
+const HM = m => `${pad(Math.floor(m/60))}:${pad(m % 60)}`;
+const toMin = v => { const [h,m] = v.split(':').map(Number); return h*60 + m; };
+const fmt = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+const addDays = (d,n) => new Date(d.getFullYear(), d.getMonth(), d.getDate()+n);
+const mondayOf = d => addDays(d, -((d.getDay()+6)%7));
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const slug = s => String(s).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+const todayKey = () => fmt(new Date());
+const $ = id => document.getElementById(id);
+
+// ---- orario: salvato nella colonna "slot" come "09:00-11:00"; nessun orario = tutto il giorno ----
+function parseSlot(s){
+  if (!s || s === 'all') return null;
+  const m = String(s).match(/^(\d{1,2})(?::(\d{2}))?(?:-(\d{1,2})(?::(\d{2}))?)?$/);
+  if (!m) return null;
+  const from = (+m[1])*60 + (+(m[2] || 0));
+  let to = m[3] !== undefined ? (+m[3])*60 + (+(m[4] || 0)) : from + 60;
+  if (to <= from) to = from + 60;
+  return {from, to};
+}
+const encRange = (from, to) => `${HM(from)}-${HM(to)}`;
+
+// posizione verticale di un orario nella tabella
+function yOf(min){ return HEAD_H + (min - T0)/60*ROW_H + (min >= PM ? DIV_H : 0); }
+const TOTAL = yOf(T1);
+function minFromY(y){
+  let m = T0;
+  for (let h = T0/60; h < T1/60; h++){ if (y >= yOf(h*60)) m = h*60; }
+  return m;
+}
+
+// ---- stato ----
+let view = 'home';        // 'home' | 'lab' | 'cal'
+let curLab = null;        // gruppo aperto (id), oppure 'none' per i calendari senza gruppo
+let curCal = null;        // calendario aperto
+let calendars = [];       // {id, name, code, position, hidden, groupId}
+let groups = [];          // {id, name, parentId, position}
+let tasks = [];           // {id, title, day, slot, done, category, createdAt}
+let categories = [];      // {id, name, color, position}
+let bookings = [];        // {id, title, day, slot, done, createdAt}
+let cursor = (() => { const n = new Date(); return new Date(n.getFullYear(), n.getMonth(), n.getDate()); })();
+let weekView = 'week';
+let selectedId = null;
+let expandedDays = new Set();
+let statusTimer = null;
+
+function flash(msg){
+  const el = $('status');
+  el.textContent = msg;
+  clearTimeout(statusTimer);
+  statusTimer = setTimeout(() => { el.textContent = ''; }, 5000);
+}
+
+// ---- calendari privati sbloccati su questo dispositivo ----
+const PRIV_KEY = 'privOpen';
+function privOpen(){
+  try { return JSON.parse(localStorage.getItem(PRIV_KEY) || '[]'); } catch(_) { return []; }
+}
+function addPrivOpen(id){
+  const l = privOpen();
+  if (!l.includes(id)){ l.push(id); localStorage.setItem(PRIV_KEY, JSON.stringify(l)); }
+}
+const isVis = c => !c.hidden || privOpen().includes(c.id) || c.id === curCal;
+
+// ---- gruppi e calendari: letture ----
+const calById = id => calendars.find(c => c.id === id);
+const calFromDb = r => ({id:r.id, name:r.name, code:r.code || null, position:r.position || 0, hidden:!!r.hidden, groupId:r.group_id || null});
+const grpById = id => groups.find(g => g.id === id);
+const grpFromDb = r => ({id:r.id, name:r.name, parentId:r.parent_id || null, position:r.position || 0});
+const byName = (a,b) => a.name.localeCompare(b.name, 'it');
+function grpPath(id){
+  const parts = []; let g = grpById(id);
+  while (g){ parts.unshift(g.name); g = g.parentId ? grpById(g.parentId) : null; }
+  return parts.join(' › ');
+}
+function labName(id){ return id === 'none' ? 'Senza laboratorio' : (grpPath(id) || 'Laboratorio'); }
+// calendari di un gruppo, sottogruppi compresi (solo quelli visibili)
+function countCals(gid){
+  const kids = groups.filter(g => g.parentId === gid).map(g => g.id);
+  return calendars.filter(c => c.groupId === gid && isVis(c)).length + kids.reduce((n,k) => n + countCals(k), 0);
+}
+// un gruppo compare solo se contiene almeno un calendario visibile (o nessun calendario)
+function groupShows(g){
+  const hasAny = (gid) => calendars.some(c => c.groupId === gid) || groups.some(x => x.parentId === gid && hasAny(x.id));
+  if (!hasAny(g.id)) return true;
+  return countCals(g.id) > 0;
+}
+
+async function loadCalendars(){
+  const [c, g] = await Promise.all([
+    sb.from('calendars').select('*').order('position', {ascending:true}),
+    sb.from('groups').select('*').order('position', {ascending:true})
+  ]);
+  if (c.error || g.error){ flash('Non riesco a leggere i calendari. Hai eseguito i codici SQL su Supabase?'); return false; }
+  calendars = c.data.map(calFromDb);
+  groups = g.data.map(grpFromDb);
+  return true;
+}
+
+// ---- apertura e navigazione ----
+async function selectCalendar(id){
+  const c = calById(id); if (!c) return;
+  if (c.code && id !== curCal && localStorage.getItem('unlocked:' + id) !== '1'){
+    const v = prompt(`PIN per il calendario “${c.name}”:`);
+    if (v === null) return;
+    if (v.trim() !== c.code){ flash('PIN errato.'); return; }
+    localStorage.setItem('unlocked:' + id, '1');
+    if (c.hidden) addPrivOpen(id);
+  }
+  curCal = id;
+  curLab = c.groupId || 'none';
+  view = 'cal';
+  selectedId = null;
+  expandedDays = new Set();
+  localStorage.setItem('lastCal', id);
+  history.replaceState(null, '', '?cal=' + encodeURIComponent(slug(c.name)));
+  await loadAll();
+}
+function openLab(id){ curLab = id; view = 'lab'; render(); }
+function goBack(){
+  if (view === 'cal'){ view = 'lab'; }
+  else if (view === 'lab'){
+    const g = curLab && curLab !== 'none' ? grpById(curLab) : null;
+    if (g && g.parentId){ curLab = g.parentId; }
+    else { view = 'home'; curLab = null; }
+  }
+  render();
+}
+async function openPrivate(){
+  const pin = prompt('PIN dell’area privata:');
+  if (pin === null) return;
+  const p = pin.trim();
+  const matches = calendars.filter(c => c.hidden && c.code && c.code === p);
+  if (!matches.length){ flash('PIN non valido.'); return; }
+  matches.forEach(c => { addPrivOpen(c.id); localStorage.setItem('unlocked:' + c.id, '1'); });
+  view = 'home'; render();
+  flash(`Calendari privati sbloccati: ${matches.length}.`);
+}
+
+// ---- creazione ----
+async function newCalendar(){
+  const name = (prompt('Nome del nuovo calendario:') || '').trim();
+  if (!name) return;
+  if (calendars.some(c => slug(c.name) === slug(name))){ flash('Esiste già un calendario con questo nome.'); return; }
+  const code = (prompt('PIN (lascia vuoto per nessuno):') || '').trim() || null;
+  const hidden = !!code && confirm('Rendere il calendario privato e nascosto?\n\nSi aprirà solo con il PIN dalla sezione “Area privata”.');
+  const groupId = curLab && curLab !== 'none' ? curLab : null;
+  const row = {id: crypto.randomUUID(), name, code, position: calendars.length, hidden, group_id: groupId};
+  calendars.push(calFromDb(row));
+  if (hidden) addPrivOpen(row.id);
+  localStorage.setItem('unlocked:' + row.id, '1');
+  const {error} = await sb.from('calendars').insert(row);
+  if (error){ flash('Calendario non salvato, riprova.'); await loadCalendars(); }
+  await selectCalendar(row.id);
+}
+async function newGroup(parentId){
+  const parent = parentId ? grpById(parentId) : null;
+  const name = (prompt(parent ? `Nome del nuovo gruppo dentro “${parent.name}”:` : 'Nome del nuovo laboratorio o gruppo:') || '').trim();
+  if (!name) return;
+  if (groups.some(g => g.parentId === (parentId || null) && slug(g.name) === slug(name))){ flash('Esiste già un gruppo con questo nome lì.'); return; }
+  const row = {id: crypto.randomUUID(), name, parent_id: parentId || null, position: groups.length};
+  groups.push(grpFromDb(row)); render();
+  const {error} = await sb.from('groups').insert(row);
+  if (error){ flash('Gruppo non salvato, riprova.'); await loadCalendars(); render(); }
+}
+
+// ---- impostazioni (popup) ----
+function openSettings(){
+  if (!curCal) return;
+  const m = $('modal');
+  m.hidden = false;
+  fillSettings();
+}
+function closeSettings(){ $('modal').hidden = true; }
+function fillSettings(){
+  const c = calById(curCal); if (!c) return;
+  $('setName').value = c.name;
+  $('setCode').value = c.code || '';
+  $('setHidden').checked = !!c.hidden;
+}
+async function saveName(){
+  const c = calById(curCal); if (!c) return;
+  const name = $('setName').value.trim();
+  if (!name){ flash('Il nome non può essere vuoto.'); return; }
+  if (calendars.some(x => x.id !== c.id && slug(x.name) === slug(name))){ flash('Esiste già un calendario con questo nome.'); return; }
+  c.name = name; render();
+  const {error} = await sb.from('calendars').update({name}).eq('id', c.id);
+  if (error){ flash('Nome non salvato.'); await loadCalendars(); render(); }
+  else flash('Nome salvato.');
+}
+async function saveCode(){
+  const c = calById(curCal); if (!c) return;
+  const code = $('setCode').value.trim() || null;
+  c.code = code;
+  if (!code) c.hidden = false;
+  render();
+  const {error} = await sb.from('calendars').update({code, hidden: c.hidden}).eq('id', c.id);
+  if (error){ flash('PIN non salvato.'); await loadCalendars(); render(); }
+  else flash(code ? 'PIN salvato.' : 'PIN tolto: il calendario è aperto a tutti.');
+}
+async function saveHidden(on){
+  const c = calById(curCal); if (!c) return;
+  if (on && !c.code){ flash('Per rendere privato il calendario serve prima un PIN.'); $('setHidden').checked = false; return; }
+  c.hidden = on;
+  if (on) addPrivOpen(c.id);
+  render();
+  const {error} = await sb.from('calendars').update({hidden: on}).eq('id', c.id);
+  if (error){ flash('Impostazione non salvata.'); await loadCalendars(); render(); }
+  else flash(on ? 'Calendario privato: non compare più nell’elenco.' : 'Calendario di nuovo visibile.');
+}
+async function setCalGroup(gid){
+  const c = calById(curCal); if (!c) return;
+  c.groupId = gid || null; render();
+  const {error} = await sb.from('calendars').update({group_id: c.groupId}).eq('id', c.id);
+  if (error){ flash('Gruppo non salvato.'); await loadCalendars(); render(); }
+  else flash('Gruppo salvato.');
+}
+async function deleteCalendar(){
+  const c = calById(curCal); if (!c) return;
+  if (c.id === MAIN_ID){ flash('Il calendario Principale non si può eliminare.'); return; }
+  if (!confirm(`Eliminare “${c.name}” con tutte le sue attività, categorie e cose da prenotare? Non si può annullare.`)) return;
+  await sb.from('tasks').delete().eq('calendar_id', c.id);
+  await sb.from('categories').delete().eq('calendar_id', c.id);
+  await sb.from('bookings').delete().eq('calendar_id', c.id);
+  await sb.from('calendars').delete().eq('id', c.id);
+  calendars = calendars.filter(x => x.id !== c.id);
+  closeSettings();
+  curCal = null; view = 'home'; render();
+}
+
+// gruppi nelle impostazioni
+async function addGroupFromSettings(){
+  const name = $('grpName').value.trim();
+  if (!name){ flash('Scrivi il nome del gruppo.'); return; }
+  const parent = $('grpParent').value || null;
+  if (groups.some(g => g.parentId === parent && slug(g.name) === slug(name))){ flash('Esiste già un gruppo con questo nome lì.'); return; }
+  const row = {id: crypto.randomUUID(), name, parent_id: parent, position: groups.length};
+  groups.push(grpFromDb(row));
+  $('grpName').value = '';
+  render();
+  const {error} = await sb.from('groups').insert(row);
+  if (error){ flash('Gruppo non salvato, riprova.'); await loadCalendars(); render(); }
+  else flash('Gruppo creato.');
+}
+async function renameGroup(){
+  const id = $('grpSel').value; const g = grpById(id); if (!g) return;
+  const name = (prompt('Nuovo nome del gruppo:', g.name) || '').trim();
+  if (!name) return;
+  g.name = name; render();
+  const {error} = await sb.from('groups').update({name}).eq('id', id);
+  if (error){ flash('Nome non salvato.'); await loadCalendars(); render(); }
+}
+async function deleteGroup(){
+  const id = $('grpSel').value; const g = grpById(id); if (!g) return;
+  if (groups.some(x => x.parentId === id) || calendars.some(c => c.groupId === id)){
+    flash('Il gruppo non è vuoto: sposta prima i suoi calendari e sottogruppi.'); return;
+  }
+  if (!confirm(`Eliminare il gruppo “${grpPath(id)}”?`)) return;
+  groups = groups.filter(x => x.id !== id); render();
+  const {error} = await sb.from('groups').delete().eq('id', id);
+  if (error){ flash('Eliminazione non riuscita.'); await loadCalendars(); render(); }
+}
+
+// ---- sfondo: per calendario, su questo dispositivo ----
+const bgKey = () => 'bg:' + curCal;
+function getBg(){
+  try { return JSON.parse(localStorage.getItem(bgKey()) || 'null'); } catch(_) { return null; }
+}
+function applyBg(){
+  const b = curCal && view === 'cal' ? getBg() : null;
+  const s = document.body.style;
+  s.backgroundColor = ''; s.backgroundImage = ''; s.backgroundSize = ''; s.backgroundPosition = ''; s.backgroundAttachment = '';
+  if (b && b.type === 'color'){ s.backgroundColor = b.value; }
+  else if (!b && !window.matchMedia('(prefers-color-scheme: dark)').matches){ s.backgroundColor = DEFAULT_BG; }
+  if (b && b.type === 'image'){
+    s.backgroundImage = `url("${b.value}")`;
+    s.backgroundSize = 'cover'; s.backgroundPosition = 'center'; s.backgroundAttachment = 'fixed';
+  }
+  document.body.classList.toggle('hasimg', !!(b && b.type === 'image'));
+}
+function setBg(b){
+  if (!curCal) return;
+  if (b) localStorage.setItem(bgKey(), JSON.stringify(b));
+  else localStorage.removeItem(bgKey());
+  applyBg();
+}
+function setBgImage(){
+  const url = $('bgUrl').value.trim();
+  if (!/^https:\/\/[^"'()\s]+$/.test(url)){ flash('Inserisci un indirizzo che inizia con https://'); return; }
+  setBg({type:'image', value:url});
+}
+
+// ---- dati del calendario aperto ----
+function taskFromDb(r){
+  let slot = r.slot || null;
+  if (LEGACY_SLOT[slot]) slot = LEGACY_SLOT[slot];
+  return {id:r.id, title:r.title, day:r.day, slot, done:!!r.done, category:r.category||null, createdAt:r.created_at||0};
+}
+function catFromDb(r){ return {id:r.id, name:r.name, color:r.color, position:r.position||0}; }
+function bkFromDb(r){ return {id:r.id, title:r.title, day:r.day||null, slot:r.slot||null, done:!!r.done, createdAt:r.created_at||0}; }
+
+async function loadAll(){
+  if (!curCal){ tasks = []; categories = []; bookings = []; render(); return; }
+  const [t, c, b] = await Promise.all([
+    sb.from('tasks').select('*').eq('calendar_id', curCal),
+    sb.from('categories').select('*').eq('calendar_id', curCal).order('position', {ascending:true}),
+    sb.from('bookings').select('*').eq('calendar_id', curCal).order('created_at', {ascending:true})
+  ]);
+  if (t.error || c.error){ flash('Non riesco a caricare i dati. Ricarica la pagina.'); return; }
+  tasks = t.data.map(taskFromDb);
+  categories = c.data.map(catFromDb);
+  bookings = b.error ? [] : b.data.map(bkFromDb);
+  render();
+}
+const catById = id => categories.find(c => c.id === id);
+const colorOf = t => { const c = t.category ? catById(t.category) : null; return c ? c.color : null; };
+const taskById = id => tasks.find(x => x.id === id);
+
+async function saveChange(id, patch){
+  const t = taskById(id); if (!t) return;
+  Object.assign(t, patch);
+  render();
+  const dbPatch = {};
+  for (const k of ['title','done','day','slot','category']) if (k in patch) dbPatch[k] = patch[k];
+  const {error} = await sb.from('tasks').update(dbPatch).eq('id', id);
+  if (error){ flash('Modifica non salvata, riprova.'); loadAll(); }
+}
+async function addTask(title, category){
+  title = title.trim(); if (!title || !curCal) return;
+  const row = {id: crypto.randomUUID(), title, day:null, slot:null, done:false, category: category || null,
+               created_at: Date.now(), calendar_id: curCal};
+  tasks.push(taskFromDb(row)); render();
+  const {error} = await sb.from('tasks').insert(row);
+  if (error){ flash('Attività non salvata, riprova.'); loadAll(); }
+}
+async function removeTask(id){
+  tasks = tasks.filter(t => t.id !== id); if (selectedId === id) selectedId = null; render();
+  const {error} = await sb.from('tasks').delete().eq('id', id);
+  if (error){ flash('Eliminazione non riuscita, riprova.'); loadAll(); }
+}
+function move(id, day, slot){
+  selectedId = null;
+  saveChange(id, {day: day || null, slot: slot || null});
+}
+function dropOnTime(id, day, min){
+  const t = taskById(id); if (!t) return;
+  const r = parseSlot(t.slot);
+  const dur = r ? r.to - r.from : 60;
+  const from = Math.min(min, T1 - dur);
+  move(id, day, encRange(from, from + dur));
+}
+function selectTask(id){
+  selectedId = (selectedId === id) ? null : id;
+  render();
+}
+
+// ---- cose da prenotare ----
+function bkSlot(from, to){
+  if (!from) return null;
+  const f = toMin(from);
+  const t = to && toMin(to) > f ? toMin(to) : f + 60;
+  return encRange(f, t);
+}
+async function addBooking(){
+  const title = $('bkTitle').value.trim();
+  if (!title){ flash('Scrivi cosa va prenotato.'); return; }
+  const day = $('bkDate').value || null;
+  const slot = day ? bkSlot($('bkFrom').value, $('bkTo').value) : null;
+  const row = {id: crypto.randomUUID(), calendar_id: curCal, title, day, slot, done:false, position: bookings.length, created_at: Date.now()};
+  bookings.push(bkFromDb(row));
+  $('bkTitle').value = ''; $('bkFrom').value = ''; $('bkTo').value = '';
+  render();
+  const {error} = await sb.from('bookings').insert(row);
+  if (error){ flash('Prenotazione non salvata, riprova.'); loadAll(); }
+}
+async function saveBooking(id, patch){
+  const b = bookings.find(x => x.id === id); if (!b) return;
+  Object.assign(b, patch);
+  render();
+  const dbPatch = {};
+  for (const k of ['title','done','day','slot']) if (k in patch) dbPatch[k] = patch[k];
+  const {error} = await sb.from('bookings').update(dbPatch).eq('id', id);
+  if (error){ flash('Modifica non salvata, riprova.'); loadAll(); }
+}
+async function removeBooking(id){
+  bookings = bookings.filter(x => x.id !== id); render();
+  const {error} = await sb.from('bookings').delete().eq('id', id);
+  if (error){ flash('Eliminazione non riuscita, riprova.'); loadAll(); }
+}
+// sposta una prenotazione nel calendario: diventa un'attività (con giorno e ore se li hai scritti)
+async function bookingToCalendar(id){
+  const b = bookings.find(x => x.id === id); if (!b) return;
+  const row = {id: crypto.randomUUID(), title: b.title, day: b.day || null, slot: b.slot || null, done:false,
+               category:null, created_at: Date.now(), calendar_id: curCal};
+  tasks.push(taskFromDb(row));
+  bookings = bookings.filter(x => x.id !== id);
+  render();
+  const [r1, r2] = await Promise.all([
+    sb.from('tasks').insert(row),
+    sb.from('bookings').delete().eq('id', id)
+  ]);
+  if (r1.error || r2.error){ flash('Spostamento non riuscito, riprova.'); loadAll(); }
+  else flash(b.day ? 'Aggiunta al calendario.' : 'Aggiunta a “Da organizzare”: scegli giorno e ore dopo.');
+}
+
+// ---- categorie (nelle impostazioni) ----
+async function addCategory(name, color){
+  name = name.trim(); if (!name || !curCal) return;
+  const row = {id: crypto.randomUUID(), name, color: color || '#c2457a', position: categories.length + 1, calendar_id: curCal};
+  categories.push(catFromDb(row)); render();
+  const {error} = await sb.from('categories').insert(row);
+  if (error){ flash('Categoria non salvata, riprova.'); loadAll(); }
+}
+async function updateCategory(id, patch){
+  const c = catById(id); if (!c) return;
+  Object.assign(c, patch); render();
+  const dbPatch = {};
+  if ('name' in patch) dbPatch.name = patch.name;
+  if ('color' in patch) dbPatch.color = patch.color;
+  const {error} = await sb.from('categories').update(dbPatch).eq('id', id);
+  if (error){ flash('Modifica categoria non salvata.'); loadAll(); }
+}
+async function renameCategory(){
+  const c = catById($('catSel').value); if (!c) return;
+  const name = (prompt('Nuovo nome della categoria:', c.name) || '').trim();
+  if (name) updateCategory(c.id, {name});
+}
+async function removeCategory(){
+  const c = catById($('catSel').value); if (!c) return;
+  if (!confirm(`Eliminare la categoria “${c.name}”? Le attività resteranno senza categoria.`)) return;
+  tasks.forEach(t => { if (t.category === c.id) t.category = null; });
+  categories = categories.filter(x => x.id !== c.id); render();
+  const {error} = await sb.from('categories').delete().eq('id', c.id);
+  if (error){ flash('Eliminazione categoria non riuscita.'); loadAll(); }
+}
+
+// ---- rendering: home e laboratori ----
+const card = (id, name, n) => `<button type="button" class="card" data-lab="${id}">
+  <strong>${esc(name)}</strong><span class="note">${n} calendar${n===1?'io':'i'}</span></button>`;
+
+function homeHTML(){
+  const tops = groups.filter(g => !g.parentId).sort(byName).filter(groupShows);
+  const cards = tops.map(g => card(g.id, g.name, countCals(g.id)));
+  const noneN = calendars.filter(c => !c.groupId && isVis(c)).length;
+  if (noneN) cards.push(card('none', 'Senza laboratorio', noneN));
+  return cards.length
+    ? `<div class="cards">${cards.join('')}</div>`
+    : `<div class="empty" style="padding:24px">Nessun laboratorio ancora. Crealo con “+ Laboratorio”.</div>`;
+}
+function labHTML(){
+  const isNone = curLab === 'none';
+  const subs = isNone ? [] : groups.filter(g => g.parentId === curLab).sort(byName).filter(groupShows);
+  const cals = calendars.filter(c => (isNone ? !c.groupId : c.groupId === curLab) && isVis(c));
+  return `${subs.length ? `<div class="sub">Gruppi</div><div class="cards">${subs.map(g => card(g.id, g.name, countCals(g.id))).join('')}</div>` : ''}
+    <div class="sub">Calendari</div>
+    <div class="calbtns">${cals.map(c => `<button type="button" class="calbtn" data-cal="${c.id}">${c.hidden?'🔐 ':(c.code?'🔒 ':'')}${esc(c.name)}</button>`).join('') || '<div class="empty">Nessun calendario qui. Crealo con “+ Calendario”.</div>'}</div>`;
+}
+
+// ---- barra in alto ----
+function topHTML(){
+  const fs = `<button type="button" class="btn" id="fs">Schermo intero</button>`;
+  const priv = `<button type="button" class="btn" id="calPriv">🔐 Area privata</button>`;
+  if (view === 'cal' && curCal){
+    const c = calById(curCal);
+    return `<button type="button" class="btn" id="back">← ${esc(labName(curLab))}</button>
+      <span class="ttl">${c.hidden?'🔐 ':(c.code?'🔒 ':'')}${esc(c.name)}</span><span class="spacer"></span>
+      <button type="button" class="btn gear" id="calGear" aria-label="Impostazioni" title="Impostazioni">⚙</button>${fs}`;
+  }
+  if (view === 'lab'){
+    return `<button type="button" class="btn" id="back">← Indietro</button>
+      <span class="ttl">${esc(labName(curLab))}</span><span class="spacer"></span>
+      <button type="button" class="btn" id="calNew">+ Calendario</button>
+      ${curLab !== 'none' ? `<button type="button" class="btn" id="grpNew">+ Gruppo</button>` : ''}${priv}${fs}`;
+  }
+  return `<span class="ttl">Laboratori</span><span class="spacer"></span>
+    <button type="button" class="btn" id="labNew">+ Laboratorio</button>${priv}${fs}`;
+}
+
+// ---- rendering: calendario ----
+const tasksFor = key => tasks.filter(t => t.day === key);
+const byStart = (a,b) => (parseSlot(a.slot)?.from ?? 0) - (parseSlot(b.slot)?.from ?? 0);
+const byTime = (a,b) => (a.done?1:0)-(b.done?1:0) || (a.createdAt||0)-(b.createdAt||0);
+
+function item(t){
+  const col = colorOf(t);
+  const style = col ? ` style="--c:${col}"` : '';
+  const r = parseSlot(t.slot);
+  const range = r ? `<span class="rng">${HM(r.from)}–${HM(r.to)}</span>` : '';
+  return `<div class="item ${col?'cat':''} ${t.done?'done':''} ${selectedId===t.id?'sel':''}"${style} data-task="${t.id}" draggable="true">
+    <button type="button" class="ck" data-act="done" aria-label="Segna come fatta">${t.done?'✓':''}</button>
+    <div class="ibody">${range}<span class="ct">${esc(t.title)}</span></div></div>`;
+}
+function chip(t, mode, withRange){
+  const col = colorOf(t);
+  const style = col ? ` style="--c:${col}"` : '';
+  const r = withRange ? parseSlot(t.slot) : null;
+  const rl = r ? `<span class="rng">${HM(r.from)}–${HM(r.to)}</span>` : '';
+  const btn = mode === 'del'
+    ? `<button type="button" class="x" data-act="del" aria-label="Elimina">✕</button>`
+    : `<button type="button" class="x" data-act="unsched" aria-label="Togli dal calendario">↩</button>`;
+  return `<div class="chip ${col?'cat':''} ${t.done?'done':''} ${selectedId===t.id?'sel':''}"${style} data-task="${t.id}" draggable="true">
+    <button type="button" class="ck" data-act="done" aria-label="Segna come fatta">${t.done?'✓':''}</button>
+    ${rl}<span class="ct" title="${esc(t.title)}">${esc(t.title)}</span>${btn}</div>`;
+}
+function assignLanes(list){
+  const ends = [];
+  const out = list.slice().sort(byStart).map(t => {
+    const r = parseSlot(t.slot);
+    let i = ends.findIndex(e => e <= r.from);
+    if (i < 0){ i = ends.length; ends.push(r.to); } else ends[i] = r.to;
+    return {t, lane: i};
+  });
+  return {items: out, n: Math.max(1, ends.length)};
+}
+function timelineHTML(key, timed){
+  let h = `<div class="tl" data-drop="tl" data-tl data-day="${key}" style="height:${TOTAL}px">`;
+  h += `<div class="pl" style="top:0;height:${HEAD_H}px">Mattina</div>`;
+  for (let hr = T0/60; hr < T1/60; hr++){
+    const top = yOf(hr*60);
+    h += `<div class="hl" style="top:${top}px">${pad(hr)}:00</div><div class="hline" style="top:${top}px"></div>`;
+  }
+  h += `<div class="pl" style="top:${yOf(PM)-DIV_H}px;height:${DIV_H}px">Pomeriggio</div>`;
+  const {items, n} = assignLanes(timed);
+  for (const {t, lane} of items){
+    const r = parseSlot(t.slot);
+    const top = yOf(r.from);
+    const height = Math.max(yOf(r.to) - top, 24);
+    const col = colorOf(t);
+    const style = `top:${top}px;height:${height}px;left:calc(var(--gut) + (100% - var(--gut)) * ${lane} / ${n});width:calc((100% - var(--gut)) / ${n} - 4px);` +
+                  (col ? `--c:${col}` : '');
+    h += `<div class="block ${col?'cat':''} ${t.done?'done':''} ${selectedId===t.id?'sel':''}" style="${style}" data-task="${t.id}" draggable="true">
+      <span class="rng">${HM(r.from)}–${HM(r.to)}</span><span class="ct">${esc(t.title)}</span></div>`;
+  }
+  return h + `</div>`;
+}
+function renderWeek(){
+  const start = mondayOf(cursor);
+  const days = [...Array(7)].map((_,i) => addDays(start,i));
+  const today = todayKey();
+  const cols = days.map(d => expandedDays.has(fmt(d)) ? 'minmax(0,2.6fr)' : 'minmax(0,1fr)').join(' ');
+  let h = `<div class="week" style="grid-template-columns:${cols}">`;
+  days.forEach(d => {
+    const key = fmt(d);
+    const open = expandedDays.has(key);
+    const dayTasks = tasksFor(key);
+    const allDay = dayTasks.filter(t => !parseSlot(t.slot)).sort(byTime);
+    const timed = dayTasks.filter(t => parseSlot(t.slot)).sort(byStart);
+    h += `<div class="dcol">
+      <div class="dayhead ${key===today?'is-today':''}">
+        <span class="dname"><span>${WD[(d.getDay()+6)%7]}</span><strong>${d.getDate()}</strong></span>
+        <button type="button" class="dtog" data-toggle="${key}" aria-expanded="${open}" aria-label="Apri la tabella oraria">${open?'▴':'▾'}</button>
+      </div>`;
+    if (open){
+      h += `<div class="allday" data-drop="zone" data-day="${key}">${allDay.map(item).join('')}</div>`;
+      h += timelineHTML(key, timed);
+    } else {
+      const all = [...allDay, ...timed];
+      h += `<div class="ov" data-drop="zone" data-day="${key}">${all.map(item).join('')}${all.length ? '' : '<div class="none">Niente in programma</div>'}</div>`;
+    }
+    h += `</div>`;
+  });
+  return h + `</div>`;
+}
+function renderMonth(){
+  const first = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
+  const start = mondayOf(first);
+  const today = todayKey();
+  let h = `<div class="month">` + WD.map(w => `<div class="mhead">${w}</div>`).join('');
+  for (let i=0;i<42;i++){
+    const d = addDays(start,i), key = fmt(d);
+    const out = d.getMonth() !== cursor.getMonth();
+    h += `<div class="mcell ${out?'out':''} ${key===today?'is-today':''}" data-drop="zone" data-day="${key}">
+      <span class="mnum">${d.getDate()}</span>${tasksFor(key).sort(byStart).map(t=>chip(t,'unsched',true)).join('')}</div>`;
+  }
+  return h + `</div>`;
+}
+function renderList(){
+  const open = tasks.filter(t => !t.day);
+  $('count').textContent = open.length ? `(${open.length})` : '';
+  let h = '';
+  categories.forEach(c => {
+    const items = open.filter(t => t.category === c.id).sort(byTime);
+    if (!items.length) return;
+    h += `<div class="grp-h"><span class="dot" style="background:${c.color}"></span><span>${esc(c.name)}</span><span class="gcount">${items.length}</span></div>`;
+    h += items.map(t => chip(t,'del')).join('');
+  });
+  const none = open.filter(t => !t.category || !catById(t.category)).sort(byTime);
+  if (none.length){
+    if (categories.length) h += `<div class="grp-h"><span>Senza categoria</span><span class="gcount">${none.length}</span></div>`;
+    h += none.map(t => chip(t,'del')).join('');
+  }
+  $('list').innerHTML = h || `<div class="empty">Nessuna attività da organizzare. Scrivine una sopra e trascinala sul calendario.</div>`;
+}
+function bkRow(b){
+  const r = parseSlot(b.slot);
+  const from = r ? HM(r.from) : '', to = r ? HM(r.to) : '';
+  return `<div class="bkrow ${b.done?'done':''}" data-bk="${b.id}">
+    <div class="line">
+      <button type="button" class="ck" data-bk-act="done" aria-label="Segna come fatta">${b.done?'✓':''}</button>
+      <span class="ct" title="${esc(b.title)}">${esc(b.title)}</span>
+      <button type="button" class="x" data-bk-act="del" aria-label="Elimina">✕</button>
+    </div>
+    <div class="line when">
+      <input type="date" data-bk-field="day" value="${b.day||''}" aria-label="Giorno">
+      <input type="time" step="900" data-bk-field="from" value="${from}" aria-label="Dalle">
+      <input type="time" step="900" data-bk-field="to" value="${to}" aria-label="Alle">
+    </div>
+    <div class="line"><button type="button" class="btn sm" data-bk-act="cal">→ Metti nel calendario</button></div>
+  </div>`;
+}
+function renderBookings(){
+  $('bkCount').textContent = bookings.length ? `(${bookings.length})` : '';
+  $('bklist').innerHTML = bookings.length
+    ? bookings.map(bkRow).join('')
+    : `<div class="empty">Scrivi una strumentazione da prenotare. Puoi aggiungere giorno e ore subito o dopo.</div>`;
+}
+function catOptions(selected){
+  return `<option value="">Senza categoria</option>` +
+    categories.map(c => `<option value="${c.id}" ${c.id===selected?'selected':''}>${esc(c.name)}</option>`).join('');
+}
+// campi che l'utente sta compilando non vengono sovrascritti
+function setVal(el, v){ if (document.activeElement !== el) el.value = v; }
+function rebuild(el, html){ if (document.activeElement !== el) el.innerHTML = html; }
+
+function renderEditor(){
+  const t = taskById(selectedId);
+  $('editor').classList.toggle('on', !!t);
+  document.body.classList.toggle('picking', !!t);
+  if (!t) return;
+  const r = parseSlot(t.slot);
+  setVal($('edTitle'), t.title);
+  rebuild($('edCat'), catOptions(t.category));
+  setVal($('edDay'), t.day || '');
+  $('edAll').checked = !r;
+  $('edFrom').disabled = !r;
+  $('edTo').disabled = !r;
+  setVal($('edFrom'), r ? HM(r.from) : '09:00');
+  setVal($('edTo'), r ? HM(r.to) : '10:00');
+  $('edDone').checked = !!t.done;
+}
+function calShellHTML(){
+  return `<div id="calshell">
+    <div class="weekbar">
+      <button type="button" class="btn" id="prev" aria-label="Precedente">‹</button>
+      <span id="period"></span>
+      <button type="button" class="btn" id="next" aria-label="Successivo">›</button>
+      <button type="button" class="btn" id="today">Oggi</button>
+      <span class="spacer"></span>
+      <button type="button" class="btn" id="vw" aria-pressed="true">Settimana</button>
+      <button type="button" class="btn" id="vm" aria-pressed="false">Mese</button>
+    </div>
+    <div class="calgrid">
+      <div class="left">
+        <section class="panel"><div class="scroll" id="cal"></div></section>
+        <section class="panel" id="editor">
+          <h2>Modifica attività <button type="button" class="btn" id="edClose">Chiudi</button></h2>
+          <div class="edtitle">Tocca un giorno o un'ora per spostarla, oppure compila i campi qui sotto.</div>
+          <div class="ed">
+            <label>Titolo <input id="edTitle" type="text" maxlength="200"></label>
+            <label>Categoria <select id="edCat"></select></label>
+            <label>Giorno <input id="edDay" type="date"></label>
+            <label class="inline"><input id="edAll" type="checkbox"> Tutto il giorno</label>
+            <label>Dalle <input id="edFrom" type="time" step="900"></label>
+            <label>Alle <input id="edTo" type="time" step="900"></label>
+            <label class="inline"><input id="edDone" type="checkbox"> Fatta</label>
+            <div class="edbtns">
+              <button type="button" class="btn" id="edUnsched">Togli dal calendario</button>
+              <button type="button" class="btn danger" id="edDel">Elimina</button>
+            </div>
+          </div>
+        </section>
+      </div>
+      <div class="side">
+        <aside class="panel">
+          <h2>Da organizzare <span id="count" class="note"></span></h2>
+          <div class="add">
+            <input id="newTitle" type="text" placeholder="Nuova attività" maxlength="200" aria-label="Nuova attività">
+            <select id="newCat" aria-label="Categoria"></select>
+            <button type="button" class="btn" id="addBtn">Aggiungi</button>
+          </div>
+          <div class="list" id="list" data-drop="list"></div>
+        </aside>
+        <aside class="panel">
+          <h2>Cose da prenotare <span id="bkCount" class="note"></span></h2>
+          <div class="add">
+            <input id="bkTitle" class="full" type="text" placeholder="Strumentazione da prenotare" maxlength="200" aria-label="Cosa prenotare">
+            <input id="bkDate" type="date" aria-label="Giorno della prenotazione">
+            <button type="button" class="btn" id="bkAdd">Aggiungi</button>
+            <input id="bkFrom" type="time" step="900" aria-label="Dalle">
+            <input id="bkTo" type="time" step="900" aria-label="Alle">
+          </div>
+          <div class="list" id="bklist"></div>
+        </aside>
+      </div>
+    </div>
+  </div>`;
+}
+function renderCalParts(){
+  $('period').textContent = weekView === 'week'
+    ? (() => { const s = mondayOf(cursor), e = addDays(s,6);
+        return `${s.toLocaleDateString('it-IT',{day:'numeric',month:'short'})} – ${e.toLocaleDateString('it-IT',{day:'numeric',month:'short',year:'numeric'})}`; })()
+    : (() => { const t = cursor.toLocaleDateString('it-IT',{month:'long',year:'numeric'}); return t.charAt(0).toUpperCase() + t.slice(1); })();
+  $('vw').setAttribute('aria-pressed', weekView==='week');
+  $('vm').setAttribute('aria-pressed', weekView==='month');
+  $('cal').innerHTML = weekView === 'week' ? renderWeek() : renderMonth();
+  renderList();
+  renderBookings();
+  rebuild($('newCat'), catOptions($('newCat').value));
+  renderEditor();
+}
+
+// ---- impostazioni: menu che dipendono da gruppi e categorie ----
+function renderSettings(){
+  const c = calById(curCal);
+  const grpOpts = groups.slice().sort((a,b) => grpPath(a.id).localeCompare(grpPath(b.id), 'it'))
+    .map(g => `<option value="${g.id}">${esc(grpPath(g.id))}</option>`).join('');
+  rebuild($('setGroup'), `<option value="">Nessun gruppo</option>` + grpOpts);
+  if (c && document.activeElement !== $('setGroup')) $('setGroup').value = c.groupId || '';
+  rebuild($('grpParent'), `<option value="">Livello principale</option>` + grpOpts);
+  rebuild($('grpSel'), grpOpts || `<option value="">Nessun gruppo</option>`);
+  rebuild($('catSel'), categories.length
+    ? categories.map(x => `<option value="${x.id}">${esc(x.name)}</option>`).join('')
+    : `<option value="">Nessuna categoria</option>`);
+  const cc = catById($('catSel').value);
+  if (cc && document.activeElement !== $('catColor')) $('catColor').value = cc.color;
+}
+
+function render(){
+  if (view === 'cal' && !curCal) view = 'home';
+  applyBg();
+  $('top').innerHTML = topHTML();
+  if (view === 'cal'){
+    if (!$('calshell')) $('view').innerHTML = calShellHTML();
+    renderCalParts();
+  } else if (view === 'lab'){
+    $('view').innerHTML = labHTML();
+  } else {
+    $('view').innerHTML = homeHTML();
+  }
+  renderSettings();
+}
+
+// ---- trascinamento e tocco sulle zone del calendario ----
+function applyDrop(zone, clientY, id){
+  if (zone.dataset.drop === 'list'){ move(id, null, null); return; }
+  const day = zone.dataset.day;
+  if (zone.hasAttribute('data-tl')){
+    const rect = zone.getBoundingClientRect();
+    dropOnTime(id, day, minFromY(clientY - rect.top));
+  } else {
+    const t = taskById(id); move(id, day, t ? t.slot : null);
+  }
+}
+
+// ---- interazione ----
+const root = document.querySelector('.wrap');
+root.addEventListener('click', e => {
+  // popup impostazioni: chiude cliccando fuori
+  if (e.target.id === 'modal'){ closeSettings(); return; }
+  // barra in alto e navigazione
+  if (e.target.closest('#back')){ goBack(); return; }
+  const lab = e.target.closest('[data-lab]');
+  if (lab){ openLab(lab.dataset.lab); return; }
+  const cal = e.target.closest('[data-cal]');
+  if (cal){ selectCalendar(cal.dataset.cal); return; }
+  if (e.target.closest('#labNew')){ newGroup(null); return; }
+  if (e.target.closest('#grpNew')){ newGroup(curLab); return; }
+  if (e.target.closest('#calNew')){ newCalendar(); return; }
+  if (e.target.closest('#calPriv')){ openPrivate(); return; }
+  if (e.target.closest('#calGear')){ openSettings(); return; }
+  if (e.target.closest('#fs')){
+    if (document.fullscreenElement){ document.exitFullscreen?.(); }
+    else { document.documentElement.requestFullscreen?.().catch(() => flash('Schermo intero non disponibile su questo dispositivo.')); }
+    return;
+  }
+  // settimana
+  if (e.target.closest('#prev')){ cursor = weekView==='week' ? addDays(cursor,-7) : new Date(cursor.getFullYear(), cursor.getMonth()-1, 1); render(); return; }
+  if (e.target.closest('#next')){ cursor = weekView==='week' ? addDays(cursor,7) : new Date(cursor.getFullYear(), cursor.getMonth()+1, 1); render(); return; }
+  if (e.target.closest('#today')){ const n = new Date(); cursor = new Date(n.getFullYear(), n.getMonth(), n.getDate()); render(); return; }
+  if (e.target.closest('#vw')){ weekView = 'week'; render(); return; }
+  if (e.target.closest('#vm')){ weekView = 'month'; render(); return; }
+  if (e.target.closest('#edClose')){ selectedId = null; render(); return; }
+  if (e.target.closest('#edUnsched')){ if (selectedId){ const id = selectedId; selectedId = null; saveChange(id, {day:null, slot:null}); } return; }
+  if (e.target.closest('#edDel')){ if (selectedId && confirm('Eliminare questa attività?')) removeTask(selectedId); return; }
+  if (e.target.closest('#addBtn')){ const i = $('newTitle'); addTask(i.value, $('newCat').value); i.value = ''; i.focus(); return; }
+  if (e.target.closest('#bkAdd')){ addBooking(); return; }
+  // impostazioni (popup)
+  if (e.target.closest('#setClose')){ closeSettings(); return; }
+  if (e.target.closest('#setNameSave')){ saveName(); return; }
+  if (e.target.closest('#setCodeSave')){ saveCode(); return; }
+  if (e.target.closest('#setDelete')){ deleteCalendar(); return; }
+  if (e.target.closest('#grpAdd')){ addGroupFromSettings(); return; }
+  if (e.target.closest('#grpRename')){ renameGroup(); return; }
+  if (e.target.closest('#grpDel')){ deleteGroup(); return; }
+  if (e.target.closest('#catRename')){ renameCategory(); return; }
+  if (e.target.closest('#catDel')){ removeCategory(); return; }
+  if (e.target.closest('#catAdd')){ const n = $('catName'); addCategory(n.value, $('catNewColor').value); n.value = ''; n.focus(); return; }
+  const sw = e.target.closest('[data-bg-color]');
+  if (sw){ setBg({type:'color', value: sw.dataset.bgColor}); return; }
+  if (e.target.closest('#bgImg')){ setBgImage(); return; }
+  if (e.target.closest('#bgReset')){ setBg(null); return; }
+  // cose da prenotare
+  const bk = e.target.closest('[data-bk-act]');
+  if (bk){
+    const id = bk.closest('[data-bk]').dataset.bk;
+    const b = bookings.find(x => x.id === id); if (!b) return;
+    const act = bk.dataset.bkAct;
+    if (act === 'done') saveBooking(id, {done: !b.done});
+    if (act === 'del') removeBooking(id);
+    if (act === 'cal') bookingToCalendar(id);
+    return;
+  }
+  // calendario
+  const tog = e.target.closest('[data-toggle]');
+  if (tog){
+    const key = tog.dataset.toggle;
+    expandedDays.has(key) ? expandedDays.delete(key) : expandedDays.add(key);
+    render(); return;
+  }
+  const act = e.target.closest('[data-act]');
+  if (act){
+    const id = act.closest('[data-task]').dataset.task;
+    const t = taskById(id); if (!t) return;
+    if (act.dataset.act === 'done') saveChange(id, {done: !t.done});
+    if (act.dataset.act === 'unsched'){ if (selectedId === id) selectedId = null; saveChange(id, {day:null, slot:null}); }
+    if (act.dataset.act === 'del') removeTask(id);
+    return;
+  }
+  const zone = e.target.closest('[data-drop]');
+  const onListItem = e.target.closest('#list [data-task]');
+  if (selectedId && zone && !onListItem){
+    applyDrop(zone, e.clientY, selectedId);
+    return;
+  }
+  const task = e.target.closest('[data-task]');
+  if (task) selectTask(task.dataset.task);
+});
+
+root.addEventListener('keydown', e => {
+  if (e.key !== 'Enter') return;
+  if (e.target.id === 'newTitle') $('addBtn').click();
+  if (e.target.id === 'bkTitle') $('bkAdd').click();
+  if (e.target.id === 'catName') $('catAdd').click();
+  if (e.target.id === 'grpName') $('grpAdd').click();
+});
+
+root.addEventListener('change', e => {
+  const t0 = e.target;
+  if (t0.dataset.bkField){
+    const id = t0.closest('[data-bk]').dataset.bk;
+    const b = bookings.find(x => x.id === id); if (!b) return;
+    const field = t0.dataset.bkField;
+    if (field === 'day'){
+      saveBooking(id, {day: t0.value || null, slot: t0.value ? (b.slot || bkSlot('09:00','10:00')) : null});
+    } else {
+      const row = t0.closest('.bkrow');
+      const from = row.querySelector('[data-bk-field="from"]').value;
+      const to = row.querySelector('[data-bk-field="to"]').value;
+      saveBooking(id, {slot: bkSlot(from, to)});
+    }
+    return;
+  }
+  if (t0.id === 'setGroup'){ setCalGroup(t0.value); return; }
+  if (t0.id === 'setHidden'){ saveHidden(t0.checked); return; }
+  if (t0.id === 'catSel'){ render(); return; }
+  if (t0.id === 'catColor'){ updateCategory($('catSel').value, {color: t0.value}); return; }
+  if (t0.id === 'bgColor'){ setBg({type:'color', value: t0.value}); return; }
+  const id = selectedId; const t = id && taskById(id);
+  if (!t) return;
+  switch (t0.id){
+    case 'edTitle': {
+      const v = t0.value.trim();
+      if (v) saveChange(id, {title: v}); else render();
+      break;
+    }
+    case 'edCat': saveChange(id, {category: t0.value || null}); break;
+    case 'edDay': saveChange(id, {day: t0.value || null}); break;
+    case 'edAll': {
+      if (t0.checked) saveChange(id, {slot: null});
+      else saveChange(id, {slot: encRange(9*60, 10*60)});
+      break;
+    }
+    case 'edFrom': {
+      const r = parseSlot(t.slot) || {from: 9*60, to: 10*60};
+      const from = toMin(t0.value);
+      const to = r.to > from ? r.to : from + 60;
+      saveChange(id, {slot: encRange(from, to)});
+      break;
+    }
+    case 'edTo': {
+      const r = parseSlot(t.slot) || {from: 9*60, to: 10*60};
+      const to = toMin(t0.value);
+      if (to <= r.from){ flash('L’orario di fine deve essere dopo quello di inizio.'); render(); break; }
+      saveChange(id, {slot: encRange(r.from, to)});
+      break;
+    }
+    case 'edDone': saveChange(id, {done: t0.checked}); break;
+  }
+});
+
+root.addEventListener('dragstart', e => {
+  const task = e.target.closest('[data-task]'); if (!task) return;
+  e.dataTransfer.setData('text/plain', task.dataset.task);
+  e.dataTransfer.effectAllowed = 'move';
+  task.classList.add('dragging');
+});
+root.addEventListener('dragend', e => {
+  const task = e.target.closest('[data-task]'); if (task) task.classList.remove('dragging');
+});
+root.addEventListener('dragover', e => {
+  const zone = e.target.closest('[data-drop]'); if (!zone) return;
+  e.preventDefault(); e.dataTransfer.dropEffect = 'move';
+  document.querySelectorAll('.over').forEach(n => n.classList.remove('over'));
+  zone.classList.add('over');
+});
+root.addEventListener('dragleave', e => {
+  const zone = e.target.closest('[data-drop]'); if (zone) zone.classList.remove('over');
+});
+root.addEventListener('drop', e => {
+  const zone = e.target.closest('[data-drop]'); if (!zone) return;
+  e.preventDefault();
+  document.querySelectorAll('.over').forEach(n => n.classList.remove('over'));
+  const id = e.dataTransfer.getData('text/plain'); if (!id) return;
+  applyDrop(zone, e.clientY, id);
+});
+
+// ---- avvio ----
+async function init(){
+  render();
+  const ok = await loadCalendars();
+  if (!ok) return;
+  if (!calendars.length){
+    flash('Nessun calendario trovato: esegui il codice SQL su Supabase.');
+    return;
+  }
+  // se il link contiene ?cal=nome si apre quel calendario, altrimenti si parte dalla home
+  const want = new URLSearchParams(location.search).get('cal');
+  const c = want && calendars.find(x => slug(x.name) === slug(want));
+  if (c){ await selectCalendar(c.id); }
+  else { view = 'home'; render(); }
+}
+init();
+// ogni modifica fatta da un altro telefono aggiorna la pagina
+sb.channel('calendario')
+  .on('postgres_changes', {event:'*', schema:'public', table:'tasks'}, () => loadAll())
+  .on('postgres_changes', {event:'*', schema:'public', table:'categories'}, () => loadAll())
+  .on('postgres_changes', {event:'*', schema:'public', table:'bookings'}, () => loadAll())
+  .on('postgres_changes', {event:'*', schema:'public', table:'calendars'}, async () => { await loadCalendars(); render(); })
+  .on('postgres_changes', {event:'*', schema:'public', table:'groups'}, async () => { await loadCalendars(); render(); })
+  .subscribe();
+</script>
+</body>
+</html>

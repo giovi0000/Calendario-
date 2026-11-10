@@ -1,0 +1,607 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Calendario condiviso</title>
+<style>
+:root{
+  --bg:#fdf4f7; --panel:#ffffff; --fg:#3a1d2b; --muted:#8a6a7a; --line:#f0d6e0;
+  --accent:#c2457a; --accent-soft:#fbdde9; --today:#fde9f1; --done:#b89aa8; --day:#6b3fa0; --day-bg:#efe6fb;
+  --all-bg:#f8e6ef; --am-bg:#fffbfd; --pm-bg:#f1eaf7;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#1f141a; --panel:#2a1c24; --fg:#f7e6ee; --muted:#b592a4; --line:#4a2f3d;
+    --accent:#f08cb4; --accent-soft:#4a2536; --today:#3d2230; --done:#7d6070; --day:#c9a6f0; --day-bg:#2e2440;
+    --all-bg:#3a2330; --am-bg:#261b22; --pm-bg:#2a2032; color-scheme:dark;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;
+  padding:16px max(16px,env(safe-area-inset-right,0px)) 16px max(16px,env(safe-area-inset-left,0px))}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.wrap{max-width:1280px;margin:0 auto;display:grid;gap:16px;grid-template-columns:minmax(0,1fr) 300px}
+@media (max-width:900px){.wrap{grid-template-columns:minmax(0,1fr)}}
+header{grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:center;gap:12px;justify-content:space-between}
+h1{font-size:20px;margin:0;font-weight:650;letter-spacing:-.01em}
+.nav{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.btn{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px 11px}
+.btn:hover{border-color:var(--accent)}
+.btn[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--panel)}
+#period{min-width:150px;text-align:center;font-weight:600;padding:0 6px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;min-width:0}
+.scroll{padding:10px}
+.side{display:grid;gap:16px;align-content:start;min-width:0}
+
+/* settimana: i 7 giorni sono sempre tutti visibili, le ore si aprono con la freccia */
+.week{display:grid;gap:6px;width:100%;grid-template-columns:repeat(7,minmax(0,1fr));align-items:start}
+.dcol{min-width:0;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--panel);display:flex;flex-direction:column}
+.dayhead{padding:6px 6px;display:flex;align-items:center;justify-content:space-between;gap:4px;font-size:12px;color:var(--day);background:var(--day-bg);font-weight:650}
+.dayhead .dname{display:flex;flex-direction:column;line-height:1.1}
+.dayhead strong{font-size:16px;color:var(--fg)}
+.dayhead.is-today{background:var(--today)}
+.dtog{background:none;border:1px solid var(--line);border-radius:6px;padding:0 6px;font-size:12px;line-height:18px;color:var(--muted)}
+.dtog[aria-expanded="true"]{background:var(--accent);border-color:var(--accent);color:var(--panel)}
+.dcol>.cell{min-height:56px;background:var(--all-bg);border-bottom:1px solid var(--line)}
+.glabel{font-size:11px;color:var(--day);font-weight:650;padding:6px 6px 4px;background:var(--day-bg);border-bottom:1px solid var(--line)}
+.hrow{display:grid;grid-template-columns:50px minmax(0,1fr);border-bottom:1px solid var(--line)}
+.hrow.s-am{background:var(--am-bg)}
+.hrow.s-pm{background:var(--pm-bg)}
+.hl{font-size:11px;color:var(--muted);padding:6px 4px;font-weight:600;border-right:1px solid var(--line)}
+.hrow .cell{min-height:44px;border-radius:0;padding:3px}
+.compact{padding:4px;display:flex;flex-direction:column;gap:4px;background:var(--panel)}
+.compact .chip{font-size:11.5px}
+.cell{display:flex;flex-direction:column;gap:4px;padding:4px;transition:background .15s;min-width:0}
+.cell.over,.mcell.over,.list.over{background:var(--accent-soft)!important}
+body.picking .cell,body.picking .mcell,body.picking .list{box-shadow:inset 0 0 0 1px var(--accent)}
+
+/* ore: una riga sola, le scritte troppo lunghe si tagliano */
+.open .hrow .ct{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;word-break:normal}
+
+/* mese */
+.month{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;min-width:0}
+.month>*{background:var(--panel);min-width:0;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.mhead{padding:6px;font-size:12px;color:var(--day);background:var(--day-bg)!important;text-align:center;font-weight:650}
+.mcell{min-height:96px;padding:5px;display:flex;flex-direction:column;gap:4px;background:var(--all-bg)}
+.mcell.out{opacity:.45}
+.mcell.is-today{background:var(--today)!important}
+.mnum{font-size:12px;color:var(--muted);font-weight:600}
+
+.chip{display:flex;align-items:center;gap:5px;background:var(--accent-soft);border-radius:6px;padding:3px 4px 3px 3px;font-size:12.5px;cursor:grab;user-select:none;min-width:0}
+.chip.cat{background:color-mix(in srgb,var(--c) 25%,var(--panel));border-left:4px solid var(--c)}
+.chip.done{background:transparent;border:1px dashed var(--line);color:var(--done)}
+.chip.done.cat{border-left:4px solid var(--c)}
+.chip.done .ct{text-decoration:line-through}
+.chip.sel{box-shadow:0 0 0 2px var(--accent)}
+.chip.dragging{opacity:.4}
+.rng{flex:none;font-size:10.5px;color:var(--muted);font-weight:600}
+.ct{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ck,.x{flex:none;border:0;background:none;padding:0;line-height:1;color:var(--muted);font-size:13px;width:16px;height:16px;display:grid;place-items:center;border-radius:4px}
+.ck{border:1px solid var(--muted);border-radius:4px;font-size:10px;color:var(--accent)}
+.x:hover,.ck:hover{color:var(--fg)}
+
+.panel h2{font-size:14px;margin:0;padding:12px 14px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}
+.add{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px;padding:12px}
+.add #newTitle{grid-column:1/-1}
+.add input,.add select,.catadd input,.catadd select{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:7px 9px;min-width:0}
+.add .btn,.catadd .btn{background:var(--accent);border-color:var(--accent);color:var(--panel)}
+.list{padding:0 12px 12px;display:grid;gap:6px;min-height:120px;border-radius:0 0 12px 12px}
+.grp{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:650;margin-top:8px}
+.grp .gcount{margin-left:auto;font-weight:400;color:var(--muted)}
+.dot{width:10px;height:10px;border-radius:50%;flex:none}
+.catrow{display:flex;align-items:center;gap:6px;padding:4px 12px}
+.catrow input[type=color]{width:26px;height:26px;border:0;padding:0;background:none;cursor:pointer;flex:none}
+.catname{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.catadd{display:flex;flex-wrap:wrap;gap:6px;padding:10px 12px;align-items:center}
+.catadd input[type=text]{flex:1;min-width:120px}
+.catadd input[type=color]{width:38px;height:34px;padding:2px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
+.empty{color:var(--muted);font-size:13px;padding:10px 2px}
+#hint{display:none;background:var(--accent);color:var(--panel);border-radius:8px;padding:8px 12px;font-size:13px;justify-content:space-between;align-items:center;gap:10px;grid-column:1/-1;flex-wrap:wrap}
+#hint.on{display:flex}
+#hint select{background:var(--panel);color:var(--fg);border:0;border-radius:6px;padding:4px 6px}
+#hint button{background:none;border:1px solid currentColor;border-radius:6px;color:inherit;padding:3px 9px}
+#hint label{display:flex;align-items:center;gap:4px}
+#status{min-height:1.4em;color:var(--muted);font-size:13px;grid-column:1/-1}
+
+/* vista ampia */
+body.big .dcol>.cell{min-height:90px}
+body.big .hrow .cell{min-height:64px}
+body.big .mcell{min-height:130px}
+body.big .chip{font-size:15px}
+
+/* telefono: resta tutto visibile, testo più piccolo */
+@media (max-width:600px){
+  body{padding:10px}
+  .week{gap:3px}
+  .dayhead{padding:4px 2px;flex-direction:column;align-items:center;font-size:10px}
+  .dayhead strong{font-size:13px}
+  .dtog{padding:0 4px}
+  .hrow{grid-template-columns:34px minmax(0,1fr)}
+  .hl{font-size:9px;padding:4px 2px}
+  .dcol>.cell{min-height:46px}
+  .hrow .cell{min-height:36px}
+  .cell{padding:2px}
+  .chip{font-size:11px;padding:2px 2px;gap:2px}
+  .ck{display:none}
+  .x{width:14px;height:14px;font-size:11px}
+}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <h1>Calendario condiviso</h1>
+    <div class="nav">
+      <button class="btn" id="prev" aria-label="Precedente">‹</button>
+      <button class="btn" id="today">Oggi</button>
+      <button class="btn" id="next" aria-label="Successivo">›</button>
+      <span id="period"></span>
+      <button class="btn" id="vw" aria-pressed="true" data-view="week">Settimana</button>
+      <button class="btn" id="vm" aria-pressed="false" data-view="month">Mese</button>
+      <button class="btn" id="big" aria-pressed="false">Vista ampia</button>
+      <button class="btn" id="fs">Schermo intero</button>
+    </div>
+  </header>
+
+  <div id="hint">
+    <span id="hintText"></span>
+    <label>Dalle <select id="hintFrom" aria-label="Ora di inizio"></select></label>
+    <label>Alle <select id="hintTo" aria-label="Ora di fine"></select></label>
+    <select id="hintCat" aria-label="Categoria dell'attività"></select>
+    <button type="button" id="cancelPick">Fine</button>
+  </div>
+
+  <section class="panel"><div class="scroll" id="cal"></div></section>
+
+  <div class="side">
+    <aside class="panel">
+      <h2>Da organizzare <span id="count" style="color:var(--muted);font-weight:400"></span></h2>
+      <div class="add">
+        <input id="newTitle" type="text" placeholder="Nuova attività" maxlength="200" aria-label="Nuova attività">
+        <select id="newCat" aria-label="Categoria"></select>
+        <button class="btn" id="addBtn">Aggiungi</button>
+      </div>
+      <div class="list" id="list" data-drop="list"></div>
+    </aside>
+
+    <aside class="panel">
+      <h2>Categorie</h2>
+      <div id="catList"></div>
+      <div class="catadd">
+        <input id="catName" type="text" placeholder="Nome categoria" maxlength="60" aria-label="Nome categoria">
+        <input id="catColor" type="color" value="#c2457a" aria-label="Colore categoria">
+        <button class="btn" id="catAdd">Crea</button>
+      </div>
+    </aside>
+  </div>
+
+  <div id="status"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script>
+// ---- configurazione Supabase ----
+const SUPABASE_URL = 'https://mugzdzlyugjdprezcbac.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im11Z3pkemx5dWdqZHByZXpjYmFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM4ODg4MTQsImV4cCI6MjEwOTQ2NDgxNH0.ojM-G8vJRUXHI1deq3uPAvUcb3zJMbImcUd-jCdj44g';
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// ---- righe orarie: per cambiare gli orari modifica qui ----
+const HOURS_AM = [8, 9, 10, 11, 12];          // Mattina
+const HOURS_PM = [13, 14, 15, 16, 17, 18];    // Pomeriggio
+function pad(n){ return String(n).padStart(2,'0'); }
+const SLOTS = [
+  ...HOURS_AM.map(h => ({k:pad(h), l:`${pad(h)}:00`, g:'am'})),
+  ...HOURS_PM.map(h => ({k:pad(h), l:`${pad(h)}:00`, g:'pm'}))
+];
+const ALL_H = SLOTS.map(s => s.k);
+// le attività salvate con la vecchia dicitura Mattina/Pomeriggio prendono tutto il periodo
+const LEGACY_SLOT = {am: '08-12', pm: '13-18'};
+
+// ---- orario di un'attività ----
+// Nel database l'orario è salvato nella colonna "slot" come "da-a", per esempio "09-11".
+// Una singola ora è "10-10". Nessun giorno ha orario se la colonna è vuota o "all".
+function parseSlot(s){
+  if (!s || s === 'all') return null;
+  const m = String(s).match(/^(\d{2})(?:-(\d{2}))?$/);
+  if (!m) return null;
+  return {from: m[1], to: m[2] || m[1]};
+}
+const encSlot = (from, to) => `${from}-${to}`;
+// un'attività compare nelle ore dalla "from" alla "to" comprese
+const covers = (t, k) => { const r = parseSlot(t.slot); return !!r && r.from <= k && k <= r.to; };
+
+// ---- utilità ----
+const WD = ['Lun','Mar','Mer','Gio','Ven','Sab','Dom'];
+const fmt = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+const addDays = (d,n) => new Date(d.getFullYear(), d.getMonth(), d.getDate()+n);
+const mondayOf = d => addDays(d, -((d.getDay()+6)%7));
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const todayKey = () => fmt(new Date());
+const $ = id => document.getElementById(id);
+
+// ---- stato ----
+let tasks = [];        // {id, title, day, slot, done, category, createdAt}
+let categories = [];   // {id, name, color, position}
+let view = 'week';
+let cursor = (() => { const n = new Date(); return new Date(n.getFullYear(), n.getMonth(), n.getDate()); })();
+let selectedId = null;          // attività scelta da spostare o cambiare orario
+let pickFrom = '08', pickTo = '08';   // orario che si applica quando si tocca un giorno o un'ora
+let expandedDays = new Set();
+let statusTimer = null;
+
+function flash(msg){
+  const el = $('status');
+  el.textContent = msg;
+  clearTimeout(statusTimer);
+  statusTimer = setTimeout(() => { el.textContent = ''; }, 5000);
+}
+
+// ---- dati (Supabase) ----
+function taskFromDb(r){
+  let slot = r.slot || null;
+  if (LEGACY_SLOT[slot]) slot = LEGACY_SLOT[slot];
+  return {id:r.id, title:r.title, day:r.day, slot, done:!!r.done, category:r.category||null, createdAt:r.created_at||0};
+}
+function catFromDb(r){
+  return {id:r.id, name:r.name, color:r.color, position:r.position||0};
+}
+async function loadAll(){
+  const [t, c] = await Promise.all([
+    sb.from('tasks').select('*'),
+    sb.from('categories').select('*').order('position', {ascending:true})
+  ]);
+  if (t.error || c.error){ flash('Non riesco a caricare i dati. Ricarica la pagina.'); return; }
+  tasks = t.data.map(taskFromDb);
+  categories = c.data.map(catFromDb);
+  render();
+}
+const catById = id => categories.find(c => c.id === id);
+const colorOf = t => { const c = t.category ? catById(t.category) : null; return c ? c.color : null; };
+
+async function saveChange(id, patch){
+  const t = tasks.find(x => x.id === id); if (!t) return;
+  Object.assign(t, patch);
+  render();
+  const dbPatch = {};
+  for (const k of ['done','day','slot','category']) if (k in patch) dbPatch[k] = patch[k];
+  const {error} = await sb.from('tasks').update(dbPatch).eq('id', id);
+  if (error){ flash('Modifica non salvata, riprova.'); loadAll(); }
+}
+async function addTask(title, category){
+  title = title.trim(); if (!title) return;
+  const row = {id: crypto.randomUUID(), title, day:null, slot:null, done:false, category: category || null, created_at: Date.now()};
+  tasks.push(taskFromDb(row)); render();
+  const {error} = await sb.from('tasks').insert(row);
+  if (error){ flash('Attività non salvata, riprova.'); loadAll(); }
+}
+async function removeTask(id){
+  tasks = tasks.filter(t => t.id !== id); if (selectedId === id) selectedId = null; render();
+  const {error} = await sb.from('tasks').delete().eq('id', id);
+  if (error){ flash('Eliminazione non riuscita, riprova.'); loadAll(); }
+}
+function move(id, day, slot){
+  selectedId = null;
+  saveChange(id, {day: day || null, slot: slot || null});
+}
+// tocco su un'ora: l'inizio diventa quell'ora, la fine resta quella scelta (se prima, si allinea)
+function placeOnHour(day, k){
+  const id = selectedId; if (!id) return;
+  pickFrom = k;
+  if (pickTo < k) pickTo = k;
+  move(id, day, encSlot(pickFrom, pickTo));
+}
+function placeOnDay(day){
+  const id = selectedId; if (!id) return;
+  move(id, day, null);
+}
+// trascinamento su un'ora: l'attività mantiene la sua durata
+function dropOnHour(id, day, k){
+  const t = tasks.find(x => x.id === id); if (!t) return;
+  const r = parseSlot(t.slot);
+  const len = r ? ALL_H.indexOf(r.to) - ALL_H.indexOf(r.from) : 0;
+  const endIdx = Math.min(ALL_H.length - 1, ALL_H.indexOf(k) + len);
+  move(id, day, encSlot(k, ALL_H[endIdx]));
+}
+function selectTask(id){
+  if (selectedId === id){ selectedId = null; render(); return; }
+  selectedId = id;
+  const t = tasks.find(x => x.id === id);
+  const r = t && parseSlot(t.slot);
+  if (r){ pickFrom = r.from; pickTo = r.to; }
+  render();
+}
+// cambio dell'orario dalla barra in alto: se l'attività è già nel calendario, si aggiorna subito
+function applyRange(){
+  const t = tasks.find(x => x.id === selectedId); if (!t) return;
+  if (t.day) saveChange(t.id, {slot: encSlot(pickFrom, pickTo)});
+  else render();
+}
+async function addCategory(name, color){
+  name = name.trim(); if (!name) return;
+  const row = {id: crypto.randomUUID(), name, color: color || '#c2457a', position: categories.length + 1};
+  categories.push(catFromDb(row)); render();
+  const {error} = await sb.from('categories').insert(row);
+  if (error){ flash('Categoria non salvata, riprova.'); loadAll(); }
+}
+async function updateCategory(id, patch){
+  const c = catById(id); if (!c) return;
+  Object.assign(c, patch); render();
+  const dbPatch = {};
+  if ('name' in patch) dbPatch.name = patch.name;
+  if ('color' in patch) dbPatch.color = patch.color;
+  const {error} = await sb.from('categories').update(dbPatch).eq('id', id);
+  if (error){ flash('Modifica categoria non salvata.'); loadAll(); }
+}
+async function removeCategory(id){
+  const c = catById(id); if (!c) return;
+  if (!confirm(`Eliminare la categoria “${c.name}”? Le attività resteranno senza categoria.`)) return;
+  tasks.forEach(t => { if (t.category === id) t.category = null; });
+  categories = categories.filter(x => x.id !== id); render();
+  const {error} = await sb.from('categories').delete().eq('id', id);
+  if (error){ flash('Eliminazione categoria non riuscita.'); loadAll(); }
+}
+
+// ---- rendering ----
+const tasksFor = key => tasks.filter(t => t.day === key);
+
+function chip(t, mode, withRange){
+  const col = colorOf(t);
+  const style = col ? ` style="--c:${col}"` : '';
+  const r = withRange ? parseSlot(t.slot) : null;
+  const rl = r ? `<span class="rng">${r.from}–${r.to}</span>` : '';
+  const btn = mode === 'del'
+    ? `<button type="button" class="x" data-act="del" aria-label="Elimina">✕</button>`
+    : `<button type="button" class="x" data-act="unsched" aria-label="Rimetti in lista">↩</button>`;
+  return `<div class="chip ${col?'cat':''} ${t.done?'done':''} ${selectedId===t.id?'sel':''}"${style} data-task="${t.id}" draggable="true">
+    <button type="button" class="ck" data-act="done" aria-label="Segna come fatta">${t.done?'✓':''}</button>
+    ${rl}<span class="ct" title="${esc(t.title)}">${esc(t.title)}</span>${btn}</div>`;
+}
+function renderWeek(){
+  const start = mondayOf(cursor);
+  const days = [...Array(7)].map((_,i) => addDays(start,i));
+  const today = todayKey();
+  // il giorno aperto si allarga per far stare le scritte delle ore
+  const cols = days.map(d => expandedDays.has(fmt(d)) ? 'minmax(0,2.4fr)' : 'minmax(0,1fr)').join(' ');
+  let h = `<div class="week" style="grid-template-columns:${cols}">`;
+  days.forEach(d => {
+    const key = fmt(d);
+    const open = expandedDays.has(key);
+    const dayTasks = tasksFor(key);
+    h += `<div class="dcol ${open?'open':''}">
+      <div class="dayhead ${key===today?'is-today':''}">
+        <span class="dname"><span>${WD[(d.getDay()+6)%7]}</span><strong>${d.getDate()}</strong></span>
+        <button type="button" class="dtog" data-toggle="${key}" aria-expanded="${open}" aria-label="Mostra o nascondi le ore">${open?'▴':'▾'}</button>
+      </div>
+      <div class="cell" data-drop data-day="${key}" data-slot="all">${dayTasks.filter(t => !parseSlot(t.slot)).map(t=>chip(t,'unsched')).join('')}</div>`;
+    if (open){
+      let curG = null;
+      for (const s of SLOTS){
+        if (s.g !== curG){
+          h += `<div class="glabel">Dettaglio · ${s.g==='am'?'Mattina':'Pomeriggio'}</div>`;
+          curG = s.g;
+        }
+        // un'attività con un intervallo compare in tutte le ore comprese
+        const items = dayTasks.filter(t => covers(t, s.k));
+        h += `<div class="hrow s-${s.g}"><span class="hl">${s.l}</span>
+          <div class="cell" data-drop data-day="${key}" data-slot="${s.k}">${items.map(t=>chip(t,'unsched')).join('')}</div></div>`;
+      }
+    } else {
+      const timed = dayTasks.filter(t => parseSlot(t.slot));
+      if (timed.length){
+        h += `<div class="compact">${timed.map(t=>chip(t,'unsched',true)).join('')}</div>`;
+      }
+    }
+    h += `</div>`;
+  });
+  return h + `</div>`;
+}
+function renderMonth(){
+  const first = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
+  const start = mondayOf(first);
+  const today = todayKey();
+  let h = `<div class="month">` + WD.map(w => `<div class="mhead">${w}</div>`).join('');
+  for (let i=0;i<42;i++){
+    const d = addDays(start,i), key = fmt(d);
+    const out = d.getMonth() !== cursor.getMonth();
+    h += `<div class="mcell ${out?'out':''} ${key===today?'is-today':''}" data-drop data-day="${key}" data-slot="all">
+      <span class="mnum">${d.getDate()}</span>${tasksFor(key).map(t=>chip(t,'unsched',true)).join('')}</div>`;
+  }
+  return h + `</div>`;
+}
+function renderList(){
+  const open = tasks.filter(t => !t.day);
+  $('count').textContent = open.length ? `(${open.length})` : '';
+  const byTime = (a,b) => (a.done?1:0)-(b.done?1:0) || (a.createdAt||0)-(b.createdAt||0);
+  let h = '';
+  categories.forEach(c => {
+    const items = open.filter(t => t.category === c.id).sort(byTime);
+    if (!items.length) return;
+    h += `<div class="grp"><span class="dot" style="background:${c.color}"></span><span>${esc(c.name)}</span><span class="gcount">${items.length}</span></div>`;
+    h += items.map(t => chip(t,'del')).join('');
+  });
+  const none = open.filter(t => !t.category || !catById(t.category)).sort(byTime);
+  if (none.length){
+    if (categories.length) h += `<div class="grp"><span>Senza categoria</span><span class="gcount">${none.length}</span></div>`;
+    h += none.map(t => chip(t,'del')).join('');
+  }
+  $('list').innerHTML = h || `<div class="empty">Nessuna attività da organizzare. Scrivine una sopra e trascinala sul calendario.</div>`;
+}
+function catOptions(selected){
+  return `<option value="">Senza categoria</option>` +
+    categories.map(c => `<option value="${c.id}" ${c.id===selected?'selected':''}>${esc(c.name)}</option>`).join('');
+}
+function hourOptions(selected){
+  return ALL_H.map(h => `<option value="${h}" ${h===selected?'selected':''}>${h}:00</option>`).join('');
+}
+function renderCats(){
+  $('catList').innerHTML = categories.length ? categories.map(c => `
+    <div class="catrow">
+      <input type="color" value="${c.color}" data-cat="${c.id}" aria-label="Colore di ${esc(c.name)}">
+      <span class="catname">${esc(c.name)}</span>
+      <button type="button" class="x" data-cat-act="rename" data-id="${c.id}" aria-label="Rinomina">✎</button>
+      <button type="button" class="x" data-cat-act="del" data-id="${c.id}" aria-label="Elimina categoria">✕</button>
+    </div>`).join('')
+    : `<div class="empty">Nessuna categoria. Creane una qui sotto.</div>`;
+  const keep = $('newCat').value;
+  $('newCat').innerHTML = catOptions(keep);
+}
+function renderHeader(){
+  let label;
+  if (view === 'week'){
+    const s = mondayOf(cursor), e = addDays(s,6);
+    label = `${s.toLocaleDateString('it-IT',{day:'numeric',month:'short'})} – ${e.toLocaleDateString('it-IT',{day:'numeric',month:'short',year:'numeric'})}`;
+  } else {
+    const t = cursor.toLocaleDateString('it-IT',{month:'long',year:'numeric'});
+    label = t.charAt(0).toUpperCase() + t.slice(1);
+  }
+  $('period').textContent = label;
+  $('vw').setAttribute('aria-pressed', view==='week');
+  $('vm').setAttribute('aria-pressed', view==='month');
+  $('big').setAttribute('aria-pressed', document.body.classList.contains('big'));
+  const sel = tasks.find(t => t.id === selectedId);
+  $('hint').classList.toggle('on', !!sel);
+  document.body.classList.toggle('picking', !!sel);
+  if (sel){
+    $('hintText').textContent = sel.day
+      ? `Cambia l'orario di “${sel.title}”, oppure tocca un altro giorno o ora per spostarla`
+      : `Scegli l'orario, poi tocca un giorno per “${sel.title}”`;
+    $('hintFrom').innerHTML = hourOptions(pickFrom);
+    $('hintTo').innerHTML = hourOptions(pickTo);
+    $('hintCat').innerHTML = catOptions(sel.category);
+  }
+}
+function render(){
+  renderHeader();
+  $('cal').innerHTML = view === 'week' ? renderWeek() : renderMonth();
+  renderList();
+  renderCats();
+}
+
+// ---- interazione ----
+const root = document.querySelector('.wrap');
+root.addEventListener('click', e => {
+  const tog = e.target.closest('[data-toggle]');
+  if (tog){
+    const key = tog.dataset.toggle;
+    expandedDays.has(key) ? expandedDays.delete(key) : expandedDays.add(key);
+    render(); return;
+  }
+  const cat = e.target.closest('[data-cat-act]');
+  if (cat){
+    const c = catById(cat.dataset.id); if (!c) return;
+    if (cat.dataset.catAct === 'del') removeCategory(c.id);
+    if (cat.dataset.catAct === 'rename'){
+      const name = prompt('Nuovo nome della categoria:', c.name);
+      if (name && name.trim()) updateCategory(c.id, {name: name.trim()});
+    }
+    return;
+  }
+  const act = e.target.closest('[data-act]');
+  if (act){
+    const id = act.closest('[data-task]').dataset.task;
+    const t = tasks.find(x => x.id === id); if (!t) return;
+    if (act.dataset.act === 'done') saveChange(id, {done: !t.done});
+    if (act.dataset.act === 'unsched'){ selectedId = null; saveChange(id, {day:null, slot:null}); }
+    if (act.dataset.act === 'del') removeTask(id);
+    return;
+  }
+  // con un'attività scelta, un tocco su un giorno o un'ora la sposta lì
+  const drop = e.target.closest('[data-drop]');
+  if (drop && selectedId){
+    if (drop.dataset.drop === 'list') move(selectedId, null, null);
+    else if (drop.dataset.slot === 'all') placeOnDay(drop.dataset.day);
+    else placeOnHour(drop.dataset.day, drop.dataset.slot);
+    return;
+  }
+  const task = e.target.closest('[data-task]');
+  if (task){ selectTask(task.dataset.task); }
+});
+root.addEventListener('change', e => {
+  if (e.target.id === 'hintFrom'){
+    pickFrom = e.target.value;
+    if (pickTo < pickFrom) pickTo = pickFrom;
+    applyRange();
+  }
+  if (e.target.id === 'hintTo'){
+    pickTo = e.target.value;
+    if (pickFrom > pickTo) pickFrom = pickTo;
+    applyRange();
+  }
+  if (e.target.id === 'hintCat' && selectedId){
+    saveChange(selectedId, {category: e.target.value || null});
+  }
+  if (e.target.matches('input[type=color][data-cat]')){
+    updateCategory(e.target.dataset.cat, {color: e.target.value});
+  }
+});
+root.addEventListener('dragstart', e => {
+  const task = e.target.closest('[data-task]'); if (!task) return;
+  e.dataTransfer.setData('text/plain', task.dataset.task);
+  e.dataTransfer.effectAllowed = 'move';
+  task.classList.add('dragging');
+});
+root.addEventListener('dragend', e => {
+  const task = e.target.closest('[data-task]'); if (task) task.classList.remove('dragging');
+});
+root.addEventListener('dragover', e => {
+  const drop = e.target.closest('[data-drop]'); if (!drop) return;
+  e.preventDefault(); e.dataTransfer.dropEffect = 'move';
+  document.querySelectorAll('.over').forEach(n => n.classList.remove('over'));
+  drop.classList.add('over');
+});
+root.addEventListener('dragleave', e => {
+  const drop = e.target.closest('[data-drop]'); if (drop) drop.classList.remove('over');
+});
+root.addEventListener('drop', e => {
+  const drop = e.target.closest('[data-drop]'); if (!drop) return;
+  e.preventDefault();
+  document.querySelectorAll('.over').forEach(n => n.classList.remove('over'));
+  const id = e.dataTransfer.getData('text/plain'); if (!id) return;
+  if (drop.dataset.drop === 'list') move(id, null, null);
+  else if (drop.dataset.slot === 'all') move(id, drop.dataset.day, null);
+  else dropOnHour(id, drop.dataset.day, drop.dataset.slot);
+});
+
+$('prev').onclick = () => {
+  cursor = view==='week' ? addDays(cursor,-7) : new Date(cursor.getFullYear(), cursor.getMonth()-1, 1); render();
+};
+$('next').onclick = () => {
+  cursor = view==='week' ? addDays(cursor,7) : new Date(cursor.getFullYear(), cursor.getMonth()+1, 1); render();
+};
+$('today').onclick = () => { const n = new Date(); cursor = new Date(n.getFullYear(), n.getMonth(), n.getDate()); render(); };
+document.querySelectorAll('[data-view]').forEach(b => b.onclick = () => { view = b.dataset.view; render(); });
+$('big').onclick = () => { document.body.classList.toggle('big'); render(); };
+$('fs').onclick = () => {
+  if (document.fullscreenElement){ document.exitFullscreen?.(); }
+  else { document.documentElement.requestFullscreen?.().catch(() => flash('Schermo intero non disponibile su questo dispositivo: usa “Vista ampia”.')); }
+};
+$('cancelPick').onclick = () => { selectedId = null; render(); };
+$('addBtn').onclick = () => {
+  const input = $('newTitle');
+  addTask(input.value, $('newCat').value);
+  input.value = ''; input.focus();
+};
+$('newTitle').addEventListener('keydown', e => { if (e.key === 'Enter') $('addBtn').click(); });
+$('catAdd').onclick = () => {
+  const name = $('catName');
+  addCategory(name.value, $('catColor').value);
+  name.value = ''; name.focus();
+};
+$('catName').addEventListener('keydown', e => { if (e.key === 'Enter') $('catAdd').click(); });
+
+// ---- avvio ----
+render();
+loadAll();
+// ogni modifica fatta da un altro telefono aggiorna la pagina
+sb.channel('calendario')
+  .on('postgres_changes', {event:'*', schema:'public', table:'tasks'}, () => loadAll())
+  .on('postgres_changes', {event:'*', schema:'public', table:'categories'}, () => loadAll())
+  .subscribe();
+</script>
+</body>
+</html>
