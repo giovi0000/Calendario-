@@ -52,6 +52,11 @@ input,select{background:var(--bg);border:1px solid var(--line);border-radius:8px
 .calbtns{display:flex;flex-direction:column;gap:8px;max-width:520px}
 .calbtn{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 16px;text-align:left;width:100%}
 .calbtn:hover{border-color:var(--accent)}
+.calrow{display:flex;align-items:center;gap:6px;max-width:560px}
+.calrow .calbtn{flex:1;min-width:0}
+.cardwrap{display:grid;gap:6px}
+.cardtools{display:flex;gap:6px;justify-content:flex-end}
+.cardtools .x{width:auto;padding:4px 8px;font-size:14px}
 
 /* calendario: barra della settimana */
 .weekbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:8px 10px;margin-bottom:10px}
@@ -299,6 +304,27 @@ body.hasimg .panel,body.hasimg #top{background:color-mix(in srgb,var(--panel) 88
             <button class="btn" id="bgReset">Predefinito (menta)</button>
           </div>
           <div class="note">Vale solo per questo calendario e solo su questo dispositivo.</div>
+        </div>
+        <div class="setbox">
+          <h3>Colori</h3>
+          <div class="note">Scegli i colori separatamente per la modalità chiara e per quella scura del dispositivo.</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div style="display:grid;gap:6px"><b class="note">Chiara</b>
+              <label>Sfondo <input id="thL_bg" type="color"></label>
+              <label>Riquadri <input id="thL_panel" type="color"></label>
+              <label>Testo <input id="thL_fg" type="color"></label>
+              <label>Accento <input id="thL_accent" type="color"></label>
+              <label>Secondario <input id="thL_muted" type="color"></label>
+            </div>
+            <div style="display:grid;gap:6px"><b class="note">Scura</b>
+              <label>Sfondo <input id="thD_bg" type="color"></label>
+              <label>Riquadri <input id="thD_panel" type="color"></label>
+              <label>Testo <input id="thD_fg" type="color"></label>
+              <label>Accento <input id="thD_accent" type="color"></label>
+              <label>Secondario <input id="thD_muted" type="color"></label>
+            </div>
+          </div>
+          <div class="row"><button class="btn" id="thReset">Ripristina colori predefiniti</button></div>
         </div>
 
       </div>
@@ -981,6 +1007,7 @@ async function openSettings(){
   if (!curCal) return;
   $('modal').hidden = false;
   fillSettings();
+  fillTheme();
   await refreshAdmin();
 }
 // ---- ruoli: admin e membri ----
@@ -1129,6 +1156,106 @@ async function deleteGroup(){
   await loadCalendars(); render();
 }
 
+// ---- metti nel calendario: scegli giorno e ore (utile da telefono) ----
+let schedId = null;
+function openSched(id){
+  const t = taskById(id); if (!t) return;
+  schedId = id;
+  $('schTitle').textContent = t.title;
+  $('schDate').value = todayKey();
+  $('schFrom').value = '09:00';
+  $('schTo').value = '10:00';
+  $('schedModal').hidden = false;
+}
+function closeSched(){ $('schedModal').hidden = true; schedId = null; }
+function saveSched(){
+  const id = schedId;
+  const day = $('schDate').value;
+  if (!id || !day){ flash('Scegli il giorno.'); return; }
+  const f = toMin($('schFrom').value || '09:00');
+  const t = toMin($('schTo').value || '10:00');
+  const to = t > f ? t : f + 60;
+  closeSched();
+  move(id, day, encRange(f, to));
+}
+
+// ---- rinomina ed elimina calendari e laboratori (con PIN per i calendari protetti) ----
+// chiede il PIN del calendario, se è protetto e non è già ricordato su questo dispositivo
+async function guardPin(c){
+  if (!c.protected) return true;
+  if (pinFor(c.id)){
+    const {data} = await sb.rpc('protected_check', {p_pin: pinFor(c.id), p_cal: c.id});
+    if (data) return true;
+  }
+  const v = prompt(`PIN del calendario “${c.name}”:`);
+  if (v === null) return false;
+  const {data} = await sb.rpc('protected_check', {p_pin: v.trim(), p_cal: c.id});
+  if (!data){ flash('PIN errato.'); return false; }
+  setPin(c.id, v.trim());
+  return true;
+}
+async function renameCalById(id){
+  const c = calById(id); if (!c) return;
+  if (!(await guardPin(c))) return;
+  const name = (prompt('Nuovo nome del calendario:', c.name) || '').trim();
+  if (!name) return;
+  if (calendars.some(x => x.id !== c.id && slug(x.name) === slug(name))){ flash('Esiste già un calendario con questo nome.'); return; }
+  const {error} = await dbOp(c.id, 'calendars', 'update', {id: c.id, data: {name}});
+  if (error){ if (!pinError(error)) flash('Nome non salvato: ' + error.message); return; }
+  await loadCalendars(); render();
+  flash('Nome cambiato.');
+}
+async function deleteCalById(id){
+  const c = calById(id); if (!c) return;
+  if (c.id === MAIN_ID){ flash('Il calendario Principale non si può eliminare.'); return; }
+  if (c.protected){
+    if (!(await guardPin(c))) return;
+    // eliminare un calendario protetto richiede il PIN admin
+    const {data: admin} = await sb.rpc('protected_is_admin', {p_pin: pinFor(c.id), p_cal: c.id});
+    if (!admin){
+      const v = prompt(`Per eliminare “${c.name}” serve il PIN admin:`);
+      if (!v) return;
+      const {data: ok} = await sb.rpc('protected_is_admin', {p_pin: v.trim(), p_cal: c.id});
+      if (!ok){ flash('PIN admin non valido.'); return; }
+      setPin(c.id, v.trim());
+    }
+  }
+  if (!(await askConfirm(`Eliminare “${c.name}”?\nSi perdono tutte le sue attività, categorie e strumentazioni. Non si può annullare.`))) return;
+  let error;
+  if (c.protected){
+    ({error} = await sb.rpc('protected_delete_calendar', {p_pin: pinFor(c.id), p_cal: c.id}));
+  } else {
+    await dbOp(c.id, 'tasks', 'clear');
+    await dbOp(c.id, 'categories', 'clear');
+    await dbOp(c.id, 'bookings', 'clear');
+    ({error} = await dbOp(c.id, 'calendars', 'delete', {id: c.id}));
+  }
+  if (error){ flash('Eliminazione non riuscita: ' + error.message); return; }
+  dropPin(c.id);
+  if (curCal === c.id){ curCal = null; view = 'lab'; }
+  await loadCalendars(); render();
+  flash('Calendario eliminato.');
+}
+async function renameGroupById(id){
+  const g = grpById(id); if (!g) return;
+  const name = (prompt('Nuovo nome del laboratorio:', g.name) || '').trim();
+  if (!name) return;
+  if (groups.some(x => x.id !== id && x.parentId === g.parentId && slug(x.name) === slug(name))){ flash('Esiste già un laboratorio con questo nome.'); return; }
+  g.name = name; render();
+  const {error} = await sb.from('groups').update({name}).eq('id', id);
+  if (error){ flash('Nome non salvato.'); await loadCalendars(); render(); }
+}
+async function deleteGroupById(id){
+  const g = grpById(id); if (!g) return;
+  if (groups.some(x => x.parentId === id) || calendars.some(c => c.groupId === id)){
+    flash('Il laboratorio non è vuoto: sposta prima i suoi calendari e gruppi.'); return;
+  }
+  if (!(await askConfirm(`Eliminare il laboratorio “${g.name}”?`))) return;
+  groups = groups.filter(x => x.id !== id); render();
+  const {error} = await sb.from('groups').delete().eq('id', id);
+  if (error){ flash('Eliminazione non riuscita.'); await loadCalendars(); render(); }
+}
+
 // ---- conferma al centro dello schermo (al posto di confirm del browser) ----
 let askResolve = null;
 function askConfirm(msg, okLabel = 'Elimina'){
@@ -1167,17 +1294,48 @@ async function revokeLinks(){
   flash('Link revocati.');
 }
 
+// ---- colori: uno set per la modalità chiara e uno per la scura (salvati su questo dispositivo) ----
+const TH_DEF = {
+  light: {bg:'#e8f6ef', panel:'#ffffff', fg:'#3a1d2b', accent:'#c2457a', muted:'#6f7f76'},
+  dark:  {bg:'#1f141a', panel:'#2a1c24', fg:'#f7e6ee', accent:'#f08cb4', muted:'#b592a4'}
+};
+const TH_KEYS = ['bg','panel','fg','accent','muted'];
+const isDarkMode = () => window.matchMedia('(prefers-color-scheme: dark)').matches;
+function themeSaved(){ try { return JSON.parse(localStorage.getItem('theme') || '{}'); } catch(_) { return {}; } }
+function themeFor(mode){ return {...TH_DEF[mode], ...(themeSaved()[mode] || {})}; }
+function applyTheme(){
+  const t = themeFor(isDarkMode() ? 'dark' : 'light');
+  const st = document.documentElement.style;
+  TH_KEYS.forEach(k => st.setProperty('--' + k, t[k]));
+}
+function fillTheme(){
+  ['light','dark'].forEach(mode => {
+    const k = mode === 'light' ? 'L' : 'D';
+    const t = themeFor(mode);
+    TH_KEYS.forEach(key => { const el = $(`th${k}_${key}`); if (el && document.activeElement !== el) el.value = t[key]; });
+  });
+}
+function saveTheme(id){
+  const m = /^th([LD])_(\w+)$/.exec(id); if (!m) return;
+  const mode = m[1] === 'L' ? 'light' : 'dark';
+  const all = themeSaved();
+  all[mode] = {...(all[mode] || {}), [m[2]]: $(id).value};
+  localStorage.setItem('theme', JSON.stringify(all));
+  applyTheme();
+}
+
 // ---- sfondo: per calendario, su questo dispositivo ----
 const bgKey = () => 'bg:' + curCal;
 function getBg(){
   try { return JSON.parse(localStorage.getItem(bgKey()) || 'null'); } catch(_) { return null; }
 }
 function applyBg(){
+  applyTheme();
   const b = curCal && view === 'cal' ? getBg() : null;
   const s = document.body.style;
   s.backgroundColor = ''; s.backgroundImage = ''; s.backgroundSize = ''; s.backgroundPosition = ''; s.backgroundAttachment = '';
   if (b && b.type === 'color'){ s.backgroundColor = b.value; }
-  else if (!b && !window.matchMedia('(prefers-color-scheme: dark)').matches){ s.backgroundColor = DEFAULT_BG; }
+
   if (b && b.type === 'image'){
     s.backgroundImage = `url("${b.value}")`;
     s.backgroundSize = 'cover'; s.backgroundPosition = 'center'; s.backgroundAttachment = 'fixed';
@@ -1416,9 +1574,11 @@ async function removeCategory(){
 const card = (id, name, n) => `<button type="button" class="card" data-lab="${id}">
   <strong>${esc(name)}</strong><span class="note">${n} calendar${n===1?'io':'i'}</span></button>`;
 
+const labCard = g => `<div class="cardwrap">${card(g.id, g.name, countCals(g.id))}
+  <div class="cardtools"><button type="button" class="x" data-grp-ren="${g.id}" aria-label="Rinomina laboratorio" title="Rinomina">✎</button><button type="button" class="x trash" data-grp-del="${g.id}" aria-label="Elimina laboratorio" title="Elimina">🗑</button></div></div>`;
 function homeHTML(){
   const tops = groups.filter(g => !g.parentId).sort(byName).filter(groupShows);
-  const cards = tops.map(g => card(g.id, g.name, countCals(g.id)));
+  const cards = tops.map(g => labCard(g));
   const noneN = calendars.filter(c => !c.groupId && isVis(c)).length;
   if (noneN) cards.push(card('none', 'Senza laboratorio', noneN));
   return cards.length
@@ -1431,7 +1591,7 @@ function labHTML(){
   const cals = calendars.filter(c => (isNone ? !c.groupId : c.groupId === curLab) && isVis(c));
   return `${subs.length ? `<div class="sub">Gruppi</div><div class="cards">${subs.map(g => card(g.id, g.name, countCals(g.id))).join('')}</div>` : ''}
     <div class="sub">Calendari</div>
-    <div class="calbtns">${cals.map(c => `<button type="button" class="calbtn" data-cal="${c.id}">${lockLabel(c)}${esc(c.name)}</button>`).join('') || '<div class="empty">Nessun calendario qui. Crealo con “+ Calendario”.</div>'}</div>`;
+    <div class="calbtns">${cals.map(c => `<div class="calrow"><button type="button" class="calbtn" data-cal="${c.id}">${lockLabel(c)}${esc(c.name)}</button><button type="button" class="x" data-cal-ren="${c.id}" aria-label="Rinomina" title="Rinomina">✎</button><button type="button" class="x trash" data-cal-del="${c.id}" aria-label="Elimina" title="Elimina">🗑</button></div>`).join('') || '<div class="empty">Nessun calendario qui. Crealo con “+ Calendario”.</div>'}</div>`;
 }
 
 // ---- barra in alto ----
@@ -1479,7 +1639,7 @@ function chip(t, mode, withRange){
   const r = withRange ? parseSlot(t.slot) : null;
   const rl = r ? `<span class="rng">${HM(r.from)}–${HM(r.to)}</span>` : '';
   const btn = mode === 'del'
-    ? `<button type="button" class="x" data-act="del" aria-label="Elimina">✕</button>`
+    ? `<button type="button" class="x" data-act="sched" aria-label="Metti nel calendario" title="Metti nel calendario">📅</button><button type="button" class="x" data-act="del" aria-label="Elimina">✕</button>`
     : `<button type="button" class="x" data-act="unsched" aria-label="Togli dal calendario">↩</button>`;
   return `<div class="chip ${col?'cat':''} ${t.kind==='booking'?'bk':''} ${t.done?'done':''} ${selectedId===t.id?'sel':''}"${style} data-task="${t.id}" draggable="true">
     <button type="button" class="ck" data-act="done" aria-label="Segna come fatta">${t.done?'✓':''}</button>
@@ -1649,6 +1809,19 @@ function calShellHTML(){
         <button type="button" class="btn" id="vw" aria-pressed="true">Settimana</button>
         <button type="button" class="btn" id="phoneAll" hidden>7 giorni</button>
         <button type="button" class="btn" id="vm" aria-pressed="false">Mese</button>
+      </div>
+    </div>
+    <div class="modalback" id="schedModal" hidden>
+      <div class="modal" style="max-width:420px">
+        <div class="mhead"><h2 id="schTitle">Metti nel calendario</h2><button type="button" class="btn" id="schCancel">Chiudi</button></div>
+        <div style="padding:12px;display:grid;gap:10px">
+          <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted)">Giorno <input id="schDate" type="date"></label>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted)">Dalle <input id="schFrom" type="time" step="900"></label>
+            <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted)">Alle <input id="schTo" type="time" step="900"></label>
+          </div>
+          <div><button type="button" class="btn" id="schSave">Metti nel calendario</button></div>
+        </div>
       </div>
     </div>
     <div class="modalback" id="bkModal" hidden>
@@ -1833,7 +2006,13 @@ root.addEventListener('click', e => {
   if (e.target.id === 'askModal' || e.target.closest('#askNo')){ closeAsk(false); return; }
   if (e.target.closest('#askOk')){ closeAsk(true); return; }
   if (e.target.id === 'bkModal'){ closeBkDetails(); return; }
+  if (e.target.id === 'schedModal' || e.target.closest('#schCancel')){ closeSched(); return; }
+  if (e.target.closest('#schSave')){ saveSched(); return; }
   if (e.target.closest('#back')){ goBack(); return; }
+  if (e.target.closest('[data-cal-ren]')){ renameCalById(e.target.closest('[data-cal-ren]').dataset.calRen); return; }
+  if (e.target.closest('[data-cal-del]')){ deleteCalById(e.target.closest('[data-cal-del]').dataset.calDel); return; }
+  if (e.target.closest('[data-grp-ren]')){ renameGroupById(e.target.closest('[data-grp-ren]').dataset.grpRen); return; }
+  if (e.target.closest('[data-grp-del]')){ deleteGroupById(e.target.closest('[data-grp-del]').dataset.grpDel); return; }
   const lab = e.target.closest('[data-lab]');
   if (lab){ openLab(lab.dataset.lab); return; }
   const cal = e.target.closest('[data-cal]');
@@ -1877,6 +2056,7 @@ root.addEventListener('click', e => {
   if (sw){ setBg({type:'color', value: sw.dataset.bgColor}); return; }
   if (e.target.closest('#bgImg')){ setBgImage(); return; }
   if (e.target.closest('#bgReset')){ setBg(null); return; }
+  if (e.target.closest('#thReset')){ localStorage.removeItem('theme'); applyTheme(); fillTheme(); flash('Colori ripristinati.'); return; }
   if (e.target.closest('#asAdmin')){ asAdmin(); return; }
   if (e.target.closest('#setAdminSave')){ saveAdminPin(); return; }
   if (e.target.closest('#linkMake')){ makeLink(); return; }
@@ -2013,6 +2193,7 @@ root.addEventListener('click', e => {
     if (act.dataset.act === 'done') saveChange(id, {done: !t.done});
     if (act.dataset.act === 'unsched'){ if (selectedId === id) selectedId = null; saveChange(id, {day:null, slot:null}); }
     if (act.dataset.act === 'del') removeTask(id);
+    if (act.dataset.act === 'sched') openSched(id);
     return;
   }
   const zone = e.target.closest('[data-drop]');
@@ -2038,6 +2219,7 @@ root.addEventListener('touchend', e => {
   if (Math.abs(dx) > 60){ cursor = addDays(cursor, dx < 0 ? 1 : -1); render(); }
 }, {passive: true});
 window.matchMedia('(max-width:700px)').addEventListener('change', () => render());
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => render());
 
 root.addEventListener('input', e => {
   if (e.target.id === 'rcTarget' || e.target.id === 'rcN') refreshCalc();
@@ -2076,6 +2258,7 @@ root.addEventListener('change', e => {
   if (t0.id === 'catSel'){ render(); return; }
   if (t0.id === 'catColor'){ updateCategory($('catSel').value, {color: t0.value}); return; }
   if (t0.id === 'bgColor'){ setBg({type:'color', value: t0.value}); return; }
+  if (/^th[LD]_/.test(t0.id)){ saveTheme(t0.id); return; }
   const id = selectedId; const t = id && taskById(id);
   if (!t) return;
   switch (t0.id){
