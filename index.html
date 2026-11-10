@@ -22,7 +22,7 @@
 body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;
   padding:12px max(12px,env(safe-area-inset-right,0px)) 12px max(12px,env(safe-area-inset-left,0px))}
 button,input,select{font:inherit;color:inherit}
-button{cursor:pointer}
+button{cursor:pointer;touch-action:manipulation}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .wrap{max-width:1400px;margin:0 auto;display:grid;gap:12px;grid-template-columns:minmax(0,1fr)}
 .btn{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px 10px}
@@ -192,7 +192,10 @@ body.hasimg .panel,body.hasimg #top{background:color-mix(in srgb,var(--panel) 88
 /* telefono */
 @media (max-width:700px){
   :root{--gut:34px}
-  .btn{padding:9px 12px;font-size:15px}
+  .btn{padding:10px 14px;font-size:15px;min-height:44px}
+  .btn.gear{width:46px;height:46px}
+  .x{width:28px;height:28px}
+  .menuitem{padding:14px 16px;font-size:15px}
   .item{padding:9px 8px;font-size:14px}
   .hl{font-size:11px}
   .pl{font-size:10px}
@@ -412,6 +415,7 @@ let protoOpen = null;     // protocollo aperto (id)
 let protoMode = 'edit';   // 'edit' per modificare, 'fill' per compilare e stampare
 const protoFromDb = r => ({id:r.id, groupId:r.group_id, kind:r.kind||'protocol', title:r.title, body:r.body||'', recipe:r.recipe||'', createdAt:r.created_at||0});
 let protoTab = 'protocols';   // scheda attiva: 'protocols' oppure 'recipes'
+let protoQuery = '';          // testo della ricerca nei protocolli
 const RECIPE_DEFAULT = () => JSON.stringify({base:{label:'Volume finale', value:1000, unit:'ml'}, items:[], steps:[], imports:[]});
 
 // ricetta collegata a un protocollo: calcola la tabella per il volume scelto
@@ -509,6 +513,7 @@ function calcItems(r, target, n){
     out[fi] = {...out[fi], unit: 'ml', value: rest, warn: rest < 0, filler: true};
     return out;
   }
+  if (r.fill === 'none') return out;   // solo quantità singole: nessun riempimento a volume
   // altrimenti: H2O = ciò che resta, sempre in fondo
   if (out.length){
     const rest = totalMl - out.reduce((s, o) => s + usedOf(o), 0);
@@ -605,7 +610,13 @@ function blocksEditorHTML(rc){
         <button type="button" class="btn" data-proto-act="blkadd" data-t="recipe">Ricetta</button>
       </div>
     </div>
-    <div class="note">Usa ↑ e ↓ per mettere i blocchi nell'ordine del protocollo.</div>
+    <div class="note" style="line-height:1.6">
+      <b>Come usare le {} nei passaggi</b><br>
+      • <b>{Nome ingrediente}</b>: scrivi il nome esattamente come nella ricetta sopra (es. <i>Aggiungi {Tris} al tampone</i>). Nella schermata d'uso al posto delle graffe compare la quantità calcolata.<br>
+      • <b>{campo}</b>: una parola che non è un ingrediente (es. <i>Data {data}</i>) diventa un campo da compilare quando usi il protocollo.<br>
+      • Maiuscole e spazi contano: <i>{tris}</i> non trova <i>Tris</i>.<br>
+      • Usa ↑ e ↓ per mettere i blocchi nell'ordine del protocollo.
+    </div>
   </fieldset>`;
 }
 // versione per compilare: passaggi numerati, tabelle da riempire, ricette con il loro volume
@@ -691,13 +702,13 @@ function recipeEditorHTML(r, withSteps = true){
   return `<fieldset style="border:1px solid var(--line);border-radius:10px;padding:10px;display:grid;gap:8px;min-width:0">
     <legend class="note">Ricetta</legend>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
-      <label class="note">Base (es. Volume) <input id="rcBaseLabel" type="text" value="${esc(r.base.label)}"></label>
-      <label class="note">Valore base <input id="rcBaseVal" type="number" step="any" value="${r.base.value}"></label>
+      <label class="note">Volume finale <input id="rcBaseVal" type="number" step="any" value="${r.base.value}"></label>
       <label class="note">Unità <input id="rcBaseUnit" type="text" value="${esc(r.base.unit)}"></label>
     </div>
     <label class="note" style="display:flex;gap:6px;align-items:center">Si va a volume con
       <select id="rcFill">
-        <option value="h2o" ${(r.fill === undefined || r.fill === 'h2o') ? 'selected' : ''}>H2O (automatico)</option>
+        <option value="none" ${r.fill === 'none' ? 'selected' : ''}>Nessuno: calcola solo le quantità singole</option>
+        <option value="h2o" ${(r.fill === undefined || r.fill === 'h2o') ? 'selected' : ''}>H2O (automatico, tutto va a volume)</option>
         ${r.items.map((it, i) => `<option value="${i}" ${String(r.fill) === String(i) ? 'selected' : ''}>${esc(it.name || 'Ingrediente ' + (i + 1))}</option>`).join('')}
       </select></label>
     <label class="note" style="display:flex;gap:6px;align-items:center"><input id="rcSamples" type="checkbox" ${r.samples ? 'checked' : ''}> Ci sono campioni (il protocollo chiederà il numero)</label>
@@ -730,7 +741,7 @@ function syncDraft(p){
       rows: +row.querySelector('[data-st-f="rows"]').value || 1
     }));
     p.recipe = JSON.stringify({
-      base: {label: $('rcBaseLabel').value.trim() || 'Volume', value: +$('rcBaseVal').value || 1, unit: $('rcBaseUnit').value.trim() || 'ml'},
+      base: {label: 'Volume finale', value: +$('rcBaseVal').value || 1, unit: $('rcBaseUnit').value.trim() || 'ml'},
       samples: $('rcSamples').checked,
       fill: $('rcFill') ? $('rcFill').value : 'h2o',
       items,
@@ -797,6 +808,51 @@ function refreshCalc(){
 }
 async function loadProtocols(){ await loadAll(); }
 let protoFrom = 'lab';   // dove tornare quando si chiudono i protocolli: 'lab' o 'cal'
+// esporta i protocolli (o le ricette) visibili, insieme alle ricette che usano
+function exportProtos(){
+  const list = protos.filter(p => (p.kind === 'recipe') === (protoTab === 'recipes')
+    && (!protoQuery || p.title.toLowerCase().includes(protoQuery.toLowerCase())));
+  if (!list.length){ flash('Niente da esportare.'); return; }
+  const ids = new Set(list.map(p => p.id));
+  list.forEach(p => getBlocks(recipeDefaults(parseRecipe(p.recipe)))
+    .forEach(b => { if (b.type === 'recipe') ids.add(b.id); }));
+  const items = protos.filter(p => ids.has(p.id))
+    .map(p => ({id: p.id, kind: p.kind, title: p.title, recipe: p.recipe || ''}));
+  const blob = new Blob([JSON.stringify({app: 'calendario', version: 1, items}, null, 2)], {type: 'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `protocolli-${slug(protoTab === 'recipes' ? 'ricette' : 'protocolli')}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  flash(`Esportati ${items.length} elementi: puoi inviare il file o importarlo in un altro calendario.`);
+}
+// importa un file esportato nel calendario aperto; gli id vengono rigenerati
+async function importProtos(file){
+  if (!file || !curCal) return;
+  let data;
+  try { data = JSON.parse(await file.text()); } catch(_) { flash('File non valido.'); return; }
+  if (!data || !Array.isArray(data.items)){ flash('File non valido.'); return; }
+  const map = {};
+  data.items.forEach(it => { map[it.id] = crypto.randomUUID(); });
+  const now = Date.now();
+  const rows = data.items.map((it, k) => {
+    const rc = parseRecipe(it.recipe || '');
+    if (Array.isArray(rc.blocks)) rc.blocks = rc.blocks.map(b => (b.type === 'recipe' && map[b.id]) ? {...b, id: map[b.id]} : b);
+    if (Array.isArray(rc.imports)) rc.imports = rc.imports.map(i => map[i.id] ? {...i, id: map[i.id]} : i);
+    return {id: map[it.id], group_id: null, calendar_id: curCal, kind: it.kind === 'recipe' ? 'recipe' : 'protocol',
+            title: it.title || 'Importato', body: '', recipe: Object.keys(rc).length ? JSON.stringify(rc) : '',
+            created_at: now + k};
+  });
+  rows.forEach(r => protos.push(protoFromDb(r)));
+  render();
+  const results = await Promise.all(rows.map(r => dbOp(curCal, 'protocols', 'insert', {data: r})));
+  const err = results.find(r => r.error);
+  if (err){ if (!pinError(err.error)) flash('Importazione non riuscita: ' + err.error.message); loadAll(); }
+  else flash(`Importati ${rows.length} elementi.`);
+}
 function openProto(){ protoFrom = view; view = 'proto'; protoOpen = null; render(); }
 async function protoNew(){
   const title = $('protoTitle').value.trim();
@@ -847,7 +903,8 @@ function printProtocol(title, body, values, extra = ''){
   setTimeout(() => { try { w.focus(); w.print(); } catch(_) {} }, 300);
 }
 function protoHTML(){
-  const list = protos.filter(p => (p.kind === 'recipe') === (protoTab === 'recipes')).sort((a,b) => a.createdAt - b.createdAt);
+  const list = protos.filter(p => (p.kind === 'recipe') === (protoTab === 'recipes')
+    && (!protoQuery || p.title.toLowerCase().includes(protoQuery.toLowerCase()))).sort((a,b) => a.createdAt - b.createdAt);
   if (!protoOpen){
     const rows = list.map(p => `<div class="protorow">
         <span class="ct">${esc(p.title)}</span>
@@ -866,6 +923,13 @@ function protoHTML(){
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
         <input id="protoTitle" type="text" placeholder="Titolo del nuovo protocollo" maxlength="120" style="flex:1;min-width:160px;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:6px 8px;color:var(--fg)">
         <button type="button" class="btn" id="protoNew">${protoTab === 'recipes' ? '+ Ricetta' : '+ Protocollo'}</button>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+        <input id="protoSearch" type="search" placeholder="🔍 Cerca per titolo" value="${esc(protoQuery)}" style="flex:1;min-width:160px;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;color:var(--fg)">
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+        <button type="button" class="btn" id="protoExport">⬇ Esporta</button>
+        <label class="btn" style="cursor:pointer">⬆ Importa<input id="protoFile" type="file" accept="application/json,.json" hidden></label>
       </div>
       ${rows || '<div class="empty">Nessun protocollo ancora.</div>'}
     </section>`;
@@ -1563,7 +1627,42 @@ async function removeTask(id){
 }
 function move(id, day, slot){
   selectedId = null;
+  const t = taskById(id);
+  // primo posizionamento di un protocollo nel calendario: nascono i promemoria delle strumentazioni
+  const firstPlacement = !!(t && !t.day && day && t.kind && t.kind.startsWith('proto:'));
   saveChange(id, {day: day || null, slot: slot || null});
+  if (firstPlacement) addToolReminders(t.kind.slice(6), day);
+}
+// scrive il nome di un protocollo: entra in "Da organizzare" come attività collegata
+async function addProtoToList(){
+  const typed = $('protoPick').value.trim().toLowerCase();
+  const p = protos.find(x => x.kind !== 'recipe' && x.title.toLowerCase() === typed);
+  if (!p || !curCal){ flash('Protocollo non trovato: scegline uno dall’elenco.'); return; }
+  $('protoPick').value = '';
+  const row = {id: crypto.randomUUID(), title: p.title, day: null, slot: null, done: false,
+               category: null, kind: 'proto:' + p.id, created_at: Date.now(), calendar_id: curCal};
+  tasks.push(taskFromDb(row)); render();
+  const {error} = await dbOp(curCal, 'tasks', 'insert', {data: row});
+  if (error){ if (!pinError(error)) flash('Protocollo non salvato, riprova.'); loadAll(); }
+  else flash('Protocollo in “Da organizzare”: trascinalo nel calendario.');
+}
+// crea un promemoria "Prenotare: …" per ogni strumentazione del protocollo, sul giorno calcolato
+async function addToolReminders(protoId, day){
+  const p = protos.find(x => x.id === protoId); if (!p) return;
+  const rc = recipeDefaults(parseRecipe(p.recipe));
+  const now = Date.now();
+  const rows = rc.tools.filter(tl => tl.name).map((tl, k) => ({
+    id: crypto.randomUUID(), title: 'Prenotare: ' + tl.name,
+    day: fmt(addDays(new Date(day + 'T00:00'), -(+tl.lead || 0))),
+    slot: null, done: false, category: null, kind: 'booking', created_at: now + k + 1, calendar_id: curCal
+  }));
+  if (!rows.length) return;
+  rows.forEach(r => tasks.push(taskFromDb(r)));
+  render();
+  const results = await Promise.all(rows.map(r => dbOp(curCal, 'tasks', 'insert', {data: r})));
+  const err = results.find(r => r.error);
+  if (err){ if (!pinError(err.error)) flash('Promemoria non salvati: ' + err.error.message); loadAll(); }
+  else flash(`${rows.length} promemoria per le strumentazioni aggiunti.`);
 }
 function dropOnTime(id, day, min){
   const t = taskById(id); if (!t) return;
@@ -2048,8 +2147,9 @@ function calShellHTML(){
           </div>
           <div class="list" id="list" data-drop="list"></div>
           <div class="add">
-            <select id="protoPick" class="full" aria-label="Protocollo da mettere in calendario"></select>
-            <button type="button" class="btn full" id="protoPickBtn">📅 Metti protocollo in calendario</button>
+            <input id="protoPick" class="full" list="protoList" placeholder="Scrivi o scegli un protocollo" aria-label="Protocollo">
+            <datalist id="protoList"></datalist>
+            <button type="button" class="btn full" id="protoPickBtn">+ Aggiungi protocollo</button>
           </div>
         </aside>
         <aside class="panel">
@@ -2090,7 +2190,7 @@ function renderCalParts(){
   $('cal').innerHTML = weekView === 'week' ? renderWeek() : renderMonth();
   renderList();
   renderBookings();
-  rebuild($('protoPick'), protos.filter(p => p.kind !== 'recipe').map(p => `<option value="${p.id}">${esc(p.title)}</option>`).join('') || '<option value="">Nessun protocollo</option>');
+  rebuild($('protoList'), protos.filter(p => p.kind !== 'recipe').map(p => `<option value="${esc(p.title)}">`).join(''));
   if (!bkDateManual && $('bkWeekday').value !== '' && document.activeElement !== $('bkDate')){
     $('bkDate').value = weekdayDate($('bkWeekday').value);
   }
@@ -2245,13 +2345,9 @@ root.addEventListener('click', e => {
   if (tabBtn){ protoTab = tabBtn.dataset.ptab; protoOpen = null; render(); return; }
   if (e.target.closest('#protoNew')){ protoNew(); return; }
   if (e.target.closest('#protoSave')){ protoSave(); return; }
+  if (e.target.closest('#protoExport')){ exportProtos(); return; }
   if (e.target.closest('#protoPlace')){ openProtoPlace(); return; }
-  if (e.target.closest('#protoPickBtn')){
-    const pid = $('protoPick').value;
-    if (!pid){ flash('Scegli prima un protocollo dal menu.'); return; }
-    openProtoPlace(pid);
-    return;
-  }
+  if (e.target.closest('#protoPickBtn')){ addProtoToList(); return; }
   if (e.target.closest('#protoClose')){ protoOpen = null; render(); return; }
   if (e.target.closest('#protoPrint')){
     const p = protos.find(x => x.id === protoOpen); if (!p) return;
@@ -2407,6 +2503,13 @@ window.matchMedia('(max-width:700px)').addEventListener('change', () => render()
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => render());
 
 root.addEventListener('input', e => {
+  if (e.target.id === 'protoSearch'){
+    protoQuery = e.target.value;
+    render();
+    const s = $('protoSearch');
+    if (s){ s.focus(); s.setSelectionRange(s.value.length, s.value.length); }
+    return;
+  }
   if (e.target.id === 'rcTarget' || e.target.id === 'rcN') refreshCalc();
   if (e.target.closest('[data-rc-row]') || e.target.id === 'rcBaseVal' || e.target.id === 'rcBaseUnit') refreshRecipeEdit();
   if (e.target.hasAttribute('data-impf')) refreshImports();
@@ -2422,6 +2525,7 @@ root.addEventListener('keydown', e => {
 
 root.addEventListener('change', e => {
   const t0 = e.target;
+  if (t0.id === 'protoFile'){ importProtos(t0.files[0]); t0.value = ''; return; }
   if (t0.closest && (t0.closest('[data-rc-row]') || t0.id === 'rcFill' || t0.id === 'rcBaseVal' || t0.id === 'rcBaseUnit')) refreshRecipeEdit();
   if (t0.dataset.bkField){
     const id = t0.closest('[data-bk]').dataset.bk;
