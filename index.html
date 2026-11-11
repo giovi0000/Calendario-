@@ -1064,6 +1064,7 @@ function protoHTML(){
             <button type="button" class="menuitem" data-plus="calc">Calcoli</button>
             <button type="button" class="menuitem" data-plus="recipe">Ricetta</button>
             <button type="button" class="menuitem" data-plus="text">Testo (più passaggi)</button>
+            <button type="button" class="menuitem" data-plus="tools">Strumenti da prenotare</button>
           </div>
         </div>
       </div>
@@ -1603,6 +1604,10 @@ function entriesListHTML(p){
       <button type="button" class="btn sm" data-ent="edit" data-i="${i}">✎ Modifica</button>
       <button type="button" class="x trash" data-ent="del" data-i="${i}" aria-label="Elimina" title="Elimina">✕</button></div>`);
   });
+  const tl = (r.tools || []).filter(t => t.name);
+  rows.push(`<div class="protorow"><span class="note" style="min-width:110px">Strumenti</span>
+    <span class="ct">${tl.length ? esc(tl.map(t => `${t.name} (${t.lead ?? 0} gg prima)`).join(' · ')) : 'Nessuno strumento da prenotare'}</span>
+    <button type="button" class="btn sm" data-ent="edit" data-i="tools">✎ Modifica</button></div>`);
   return rows.length ? rows.join('') : '<div class="empty" style="padding:16px 0">Pagina vuota. Premi + in alto a destra per aggiungere passaggi, calcoli o ricette.</div>';
 }
 // apre il popup: nuova voce (idx null) oppure modifica (idx = 'calc' o numero di blocco)
@@ -1634,6 +1639,9 @@ function openEntry(kind, idx){
     body = `<label class="note">Ricetta <select id="etRecSel" style="width:100%">${opts || '<option value="">Nessuna ricetta: creala nella scheda Ricette</option>'}</select></label>
       <label class="note">Volume da preparare <input id="etVol" type="number" step="any" value="${b ? b.vol : ''}" style="width:150px"></label>
       ${secSel(b ? b.sec : 'nec')}${fmtSelHTML(b ? b.fmt : 'list')}`;
+  } else if (kind === 'tools'){
+    title = 'Strumenti da prenotare';
+    body = toolsEditorHTML(r);
   } else {
     title = 'Calcoli';
     body = `<div class="note">Ingredienti con stock e concentrazione finale, e il volume da preparare. Le quantità si calcolano da sole.</div>
@@ -1684,6 +1692,12 @@ async function saveEntry(){
     const sel = $('etRecSel'); const rec = sel && protos.find(x => x.id === sel.value);
     if (!rec){ flash('Scegli una ricetta.'); return; }
     put({type: 'recipe', id: rec.id, vol: +$('etVol').value || recipeDefaults(parseRecipe(rec.recipe)).base.value, sec: $('etSec').value, fmt: $('etFmt') ? $('etFmt').value : 'list'});
+  }
+  if (kind === 'tools'){
+    r.tools = [...document.querySelectorAll('#entryBody [data-tool]')].map(row => ({
+      name: row.querySelector('[data-tf="name"]').value.trim(),
+      lead: Math.max(0, parseInt(row.querySelector('[data-tf="lead"]').value, 10) || 0)
+    })).filter(t => t.name);
   }
   r.blocks = bl;
   p.recipe = JSON.stringify(r);
@@ -2655,6 +2669,7 @@ root.addEventListener('click', e => {
     const act = entBtn.dataset.ent, i = entBtn.dataset.i;
     if (act === 'edit'){
       if (i === 'calc'){ openEntry('calc', 'calc'); return; }
+      if (i === 'tools'){ openEntry('tools', 'tools'); return; }
       const p = protos.find(x => x.id === protoOpen);
       const b = p ? getBlocks(recipeDefaults(parseRecipe(p.recipe)))[+i] : null;
       if (b) openEntry(b.type === 'recipe' ? 'recipe' : 'step', +i);
@@ -2715,6 +2730,16 @@ root.addEventListener('click', e => {
     if (pa.dataset.protoAct === 'edit'){ protoOpen = id; protoMode = 'edit'; render(); }
     if (pa.dataset.protoAct === 'del'){ protoDelete(id); }
     if (pa.dataset.protoAct === 'tooladd' || pa.dataset.protoAct === 'tooldel'){
+      if (!$('entryModal').hidden){
+        const cur = [...document.querySelectorAll('#entryBody [data-tool]')].map(row => ({
+          name: row.querySelector('[data-tf="name"]').value.trim(),
+          lead: parseInt(row.querySelector('[data-tf="lead"]').value, 10) || 0
+        }));
+        if (pa.dataset.protoAct === 'tooladd') cur.push({name: '', lead: 1});
+        else cur.splice(+pa.dataset.i, 1);
+        $('entryBody').innerHTML = toolsEditorHTML({tools: cur});
+        return;
+      }
       const p = protos.find(x => x.id === protoOpen); if (!p) return;
       syncDraft(p);
       const r = recipeDefaults(parseRecipe(p.recipe));
