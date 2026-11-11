@@ -95,11 +95,10 @@ input,select{background:var(--bg);border:1px solid var(--line);border-radius:8px
 .item.done .ct{text-decoration:line-through;color:var(--done)}
 .item.sel,.block.sel{box-shadow:0 0 0 2px var(--accent)}
 /* copie delle prenotazioni: blu a righe, riconoscibili a colpo d'occhio */
-.bk{background:repeating-linear-gradient(135deg,#e5e7eb 0 8px,#d1d5db 8px 16px)!important;border:1px dashed #6b7280!important;color:#374151}
-.bk .ct,.bk .rng{color:#374151}
+.bk{background:repeating-linear-gradient(135deg,var(--bk) 0 8px,color-mix(in srgb,var(--bk) 78%,#000) 8px 16px)!important;border:1px dashed color-mix(in srgb,var(--bk) 55%,#000)!important;color:var(--fg)}
+.bk .ct,.bk .rng{color:var(--fg)}
 @media (prefers-color-scheme: dark){
-  .bk{background:repeating-linear-gradient(135deg,#3f3f46 0 8px,#52525b 8px 16px)!important;border-color:#a1a1aa!important;color:#e4e4e7}
-  .bk .ct,.bk .rng{color:#e4e4e7}
+
 }
 .ibody{flex:1;min-width:0;display:flex;flex-direction:column}
 .ibody .ct{white-space:normal;word-break:break-word;line-height:1.25}
@@ -187,6 +186,10 @@ body.picking .ov,body.picking .allday,body.picking .tl,body.picking .mcell,body.
 .setbox .row select,.setbox .row input[type=text]{flex:1;min-width:120px}
 .swatches{display:flex;gap:8px;flex-wrap:wrap}
 .sw{width:30px;height:30px;border-radius:50%;border:2px solid var(--line);padding:0}
+.exp .rcrow{flex-direction:column;align-items:stretch;padding:12px;gap:8px}
+.exp .rcrow input,.exp .rcrow select{font-size:16px;min-height:44px;width:100%;flex:none}
+.exp .rcrow > span.note{min-width:0}
+.exp .ed-label{display:block;font-size:12px;color:var(--muted)}
 body.hasimg .panel,body.hasimg #top{background:color-mix(in srgb,var(--panel) 88%,transparent)}
 
 /* telefono */
@@ -231,6 +234,25 @@ body.hasimg .panel,body.hasimg #top{background:color-mix(in srgb,var(--panel) 88
       <div style="display:flex;gap:8px;justify-content:flex-end;padding:12px 18px">
         <button type="button" class="btn" id="askNo">Annulla</button>
         <button type="button" class="btn danger" id="askOk">Elimina</button>
+      </div>
+    </div>
+  </div>
+  <div class="modalback" id="entryModal" hidden>
+    <div class="modal" style="max-width:640px;width:100%">
+      <div class="mhead"><h2 id="entryTitle">Aggiungi</h2><button type="button" class="btn" id="entryClose">Chiudi</button></div>
+      <div id="entryBody" style="padding:12px;display:grid;gap:10px"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;padding:12px">
+        <button type="button" class="btn" id="entryExp">⤢ Vista espansa</button>
+        <button type="button" class="btn" id="entrySave">Aggiungi al protocollo</button>
+      </div>
+    </div>
+  </div>
+  <div class="modalback" id="noteModal" hidden>
+    <div class="modal" style="max-width:520px;width:100%">
+      <div class="mhead"><h2 id="noteTitle">Note</h2><button type="button" class="btn" id="noteClose">Chiudi</button></div>
+      <div style="padding:12px;display:grid;gap:10px">
+        <textarea id="noteText" rows="8" placeholder="Scrivi una nota" style="width:100%;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px;color:var(--fg)"></textarea>
+        <div><button type="button" class="btn" id="noteSave">Salva nota</button></div>
       </div>
     </div>
   </div>
@@ -317,7 +339,7 @@ body.hasimg .panel,body.hasimg #top{background:color-mix(in srgb,var(--panel) 88
         </div>
         <div class="setbox">
           <h3>Colori</h3>
-          <div class="note">Scegli i colori separatamente per la modalità chiara e per quella scura del dispositivo.</div>
+          <div class="note">Ogni elemento ha il suo colore. Scegli separatamente per la modalità chiara e per quella scura.</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
             <div style="display:grid;gap:6px"><b class="note">Chiara</b>
               <label>Sfondo <input id="thL_bg" type="color"></label>
@@ -325,6 +347,13 @@ body.hasimg .panel,body.hasimg #top{background:color-mix(in srgb,var(--panel) 88
               <label>Testo <input id="thL_fg" type="color"></label>
               <label>Accento <input id="thL_accent" type="color"></label>
               <label>Secondario <input id="thL_muted" type="color"></label>
+              <label>Intestazione giorni <input id="thL_day" type="color"></label>
+              <label>Tutto il giorno <input id="thL_allday" type="color"></label>
+              <label>Righe mattina <input id="thL_am" type="color"></label>
+              <label>Righe pomeriggio <input id="thL_pm" type="color"></label>
+              <label>Attività <input id="thL_item" type="color"></label>
+              <label>Strumentazioni <input id="thL_bk" type="color"></label>
+              <label>Linee <input id="thL_line" type="color"></label>
             </div>
             <div style="display:grid;gap:6px"><b class="note">Scura</b>
               <label>Sfondo <input id="thD_bg" type="color"></label>
@@ -332,6 +361,13 @@ body.hasimg .panel,body.hasimg #top{background:color-mix(in srgb,var(--panel) 88
               <label>Testo <input id="thD_fg" type="color"></label>
               <label>Accento <input id="thD_accent" type="color"></label>
               <label>Secondario <input id="thD_muted" type="color"></label>
+              <label>Intestazione giorni <input id="thD_day" type="color"></label>
+              <label>Tutto il giorno <input id="thD_allday" type="color"></label>
+              <label>Righe mattina <input id="thD_am" type="color"></label>
+              <label>Righe pomeriggio <input id="thD_pm" type="color"></label>
+              <label>Attività <input id="thD_item" type="color"></label>
+              <label>Strumentazioni <input id="thD_bk" type="color"></label>
+              <label>Linee <input id="thD_line" type="color"></label>
             </div>
           </div>
           <div class="row"><button class="btn" id="thReset">Ripristina colori predefiniti</button></div>
@@ -472,6 +508,7 @@ function recipeDefaults(r){
     samples: !!r.samples,
     items: (r.own !== false && Array.isArray(r.items)) ? r.items : [],
     own: r.own !== false,
+    pdf: r.pdf === 'line' ? 'line' : 'list',
     steps: Array.isArray(r.steps) ? r.steps : [],
     imports: Array.isArray(r.imports) ? r.imports : [],
     blocks: Array.isArray(r.blocks) ? r.blocks : undefined,
@@ -650,6 +687,24 @@ function blocksFillHTML(rc){
   return renderSec('nec', 'Necessario') + renderSec('proc', 'Procedimento');
 }
 // stampa: stessi blocchi, con i valori inseriti nelle tabelle e i volumi scelti
+// formato nel PDF: 'list' = un ingrediente per riga, 'line' = tutto su una riga
+function lineRecipeHTML(title, unit, volume, rows){
+  if (!rows.length) return '';
+  const parts = rows.map(c => {
+    const name = c.filler ? `${c.name} a volume` : (c.name.startsWith('H2O') ? 'H2O a volume' : c.name);
+    return `${fmtNum(c.value)} ${esc(c.unit)} ${esc(name)}`;
+  });
+  return `<p style="margin:6px 0"><b>${esc(title)} ${fmtNum(volume)} ${esc(unit)}:</b> ${parts.join(' + ')}</p>`;
+}
+const fmtSelHTML = cur => `<label class="note">Nel PDF <select id="etFmt">
+  <option value="list" ${cur === 'line' ? '' : 'selected'}>Elenco (un ingrediente per riga)</option>
+  <option value="line" ${cur === 'line' ? 'selected' : ''}>Riga unica</option></select></label>`;
+// stampa compatta: titolo della ricetta e una riga per ingrediente
+function compactRecipeHTML(title, unit, volume, rows){
+  if (!rows.length) return '';
+  return `<div style="margin:6px 0 10px"><div style="font-weight:650">${esc(title)} · ${fmtNum(volume)} ${esc(unit)}</div>` +
+    rows.map(c => `<div style="font-size:12.5px;padding-left:10px">${esc(c.name)}: <b>${fmtNum(c.value)} ${esc(c.unit)}</b></div>`).join('') + `</div>`;
+}
 function blocksPrint(rc){
   const td = 'border:1px solid #999;padding:4px 6px';
   const renderSec = (key, title) => {
@@ -660,7 +715,8 @@ function blocksPrint(rc){
         const rr = recipeDefaults(parseRecipe(rec.recipe));
         const inp = document.querySelector(`[data-impf="${i}"]`);
         const vol = inp ? (+inp.value || 0) : b.vol;
-        return `<h4>Ricetta: ${esc(rec.title)}</h4><p>Volume: ${fmtNum(vol)} ${esc(rr.base.unit)}</p>${recipeTableHTML(rr, vol)}`;
+        const rowsR = calcItems(rr, vol, 1).filter(c => c.name);
+        return (b.fmt === 'line' ? lineRecipeHTML : compactRecipeHTML)(rec.title, rr.base.unit, vol, rowsR);
       }
       n++;
       const filled = (b.text || '').replace(/\{([^{}]+)\}/g, (m, k) => {
@@ -989,19 +1045,28 @@ function protoHTML(){
     </section>`;
   }
   if (protoMode === 'edit'){
-    return `<section class="panel" style="padding:12px;display:grid;gap:8px">
-      <label class="note">Titolo <input id="protoTitleEd" type="text" value="${esc(p.title)}" maxlength="120" style="width:100%"></label>
-      <label class="note" style="display:flex;gap:6px;align-items:center"><input id="rcOwn" type="checkbox" ${parseRecipe(p.recipe).own === false ? '' : 'checked'}> Ha una ricetta iniziale (ingredienti e calcoli)</label>
-      <div id="rcWrap" ${parseRecipe(p.recipe).own === false ? 'hidden' : ''}>${recipeEditorHTML(recipeDefaults(parseRecipe(p.recipe)), false)}</div>
-      ${blocksEditorHTML(recipeDefaults(parseRecipe(p.recipe)))}
-      ${toolsEditorHTML(recipeDefaults(parseRecipe(p.recipe)))}
+    return `<section class="panel" style="padding:12px;display:grid;gap:10px">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <input id="protoTitleEd" type="text" value="${esc(p.title)}" maxlength="120" style="flex:1;min-width:160px;font-size:16px;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;color:var(--fg)">
+        <div style="position:relative">
+          <button type="button" class="btn" id="protoPlus" aria-label="Aggiungi" title="Aggiungi" style="font-size:22px;min-width:48px;min-height:48px">+</button>
+          <div id="plusMenu" hidden style="position:absolute;right:0;top:100%;margin-top:6px;display:grid;background:var(--panel);border:1px solid var(--line);border-radius:10px;min-width:220px;z-index:30;box-shadow:0 6px 18px rgba(0,0,0,.15);overflow:hidden">
+            <button type="button" class="menuitem" data-plus="step">Passaggio</button>
+            <button type="button" class="menuitem" data-plus="calc">Calcoli</button>
+            <button type="button" class="menuitem" data-plus="recipe">Ricetta</button>
+            <button type="button" class="menuitem" data-plus="text">Testo (più passaggi)</button>
+          </div>
+        </div>
+      </div>
+      <div>${entriesListHTML(p)}</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button type="button" class="btn" id="protoSave">Salva</button>
+        <button type="button" class="btn" id="protoSave">Salva titolo</button>
         <button type="button" class="btn" data-proto-act="use" data-id="${p.id}">Usa / PDF</button>
         <button type="button" class="btn" id="protoClose">Chiudi</button>
       </div>
     </section>`;
   }
+
   const rc = recipeDefaults(parseRecipe(p.recipe));
   const allText = [p.body, ...getBlocks(rc).map(b => b.text || '')].join(' ');
   const ingNames = rc.items.map(it => it.name);
@@ -1378,6 +1443,24 @@ async function deleteGroup(){
   await loadCalendars(); render();
 }
 
+// ---- note sulle attività da organizzare ----
+let noteId = null;
+function openNote(id){
+  const t = taskById(id); if (!t) return;
+  noteId = id;
+  $('noteTitle').textContent = 'Note · ' + t.title;
+  $('noteText').value = t.note || '';
+  $('noteModal').hidden = false;
+}
+function closeNote(){ $('noteModal').hidden = true; noteId = null; }
+async function saveNote(){
+  const t = taskById(noteId); if (!t) return;
+  const text = $('noteText').value.trim();
+  t.note = text || null;
+  closeNote(); render();
+  const {error} = await dbOp(curCal, 'tasks', 'update', {id: t.id, data: {note: t.note}});
+  if (error){ if (!pinError(error)) flash('Nota non salvata: ' + error.message); loadAll(); }
+}
 // ---- metti nel calendario: scegli giorno e ore (utile da telefono) ----
 let schedId = null;
 let schedProto = null;   // protocollo da mettere in calendario (quando la finestra serve a questo)
@@ -1480,6 +1563,141 @@ async function deleteGroupById(id){
   if (error){ flash('Eliminazione non riuscita.'); await loadCalendars(); render(); }
 }
 
+// ---- editor a pagina vuota: voci in ordine, con + per aggiungere ----
+let entryState = null;   // {kind, idx}: idx null = nuova voce, 'calc' = calcoli, numero = blocco
+// etichetta e azioni di una voce dell'elenco
+function entriesListHTML(p){
+  const r = recipeDefaults(parseRecipe(p.recipe));
+  const bl = getBlocks(r);
+  const secName = s => s === 'nec' ? 'Necessario' : 'Procedimento';
+  const rows = [];
+  if (r.own !== false && r.items.length){
+    rows.push(`<div class="protorow"><span class="note" style="min-width:110px">Necessario</span>
+      <span class="ct">Calcoli · ${fmtNum(r.base.value)} ${esc(r.base.unit)} · ${r.items.length} ingredienti</span>
+      <button type="button" class="btn sm" data-ent="edit" data-i="calc">✎ Modifica</button>
+      <button type="button" class="x trash" data-ent="calcdel" aria-label="Togli calcoli" title="Togli calcoli">✕</button></div>`);
+  }
+  bl.forEach((b, i) => {
+    let label;
+    if (b.type === 'recipe'){
+      const rec = protos.find(x => x.id === b.id);
+      label = `Ricetta: ${rec ? rec.title : 'non trovata'} · ${fmtNum(b.vol)} ${rec ? recipeDefaults(parseRecipe(rec.recipe)).base.unit : ''}`;
+    } else if (b.type === 'table'){
+      label = `Tabella: ${b.text || '(senza titolo)'} · ${colsOf(b).join(', ') || '—'}`;
+    } else {
+      label = b.text || '(vuoto)';
+    }
+    rows.push(`<div class="protorow"><span class="note" style="min-width:110px">${secName(b.sec)}</span>
+      <span class="ct" title="${esc(label)}">${esc(label)}</span>
+      <button type="button" class="x" data-ent="up" data-i="${i}" aria-label="Sposta su" title="Sposta su">↑</button>
+      <button type="button" class="x" data-ent="down" data-i="${i}" aria-label="Sposta giù" title="Sposta giù">↓</button>
+      <button type="button" class="btn sm" data-ent="edit" data-i="${i}">✎ Modifica</button>
+      <button type="button" class="x trash" data-ent="del" data-i="${i}" aria-label="Elimina" title="Elimina">✕</button></div>`);
+  });
+  return rows.length ? rows.join('') : '<div class="empty" style="padding:16px 0">Pagina vuota. Premi + in alto a destra per aggiungere passaggi, calcoli o ricette.</div>';
+}
+// apre il popup: nuova voce (idx null) oppure modifica (idx = 'calc' o numero di blocco)
+function openEntry(kind, idx){
+  const p = protos.find(x => x.id === protoOpen); if (!p) return;
+  const r = recipeDefaults(parseRecipe(p.recipe));
+  const bl = getBlocks(r);
+  const b = (idx !== null && idx !== 'calc') ? bl[idx] : null;
+  entryState = {kind, idx};
+  const secSel = cur => `<label class="note">Sezione <select id="etSec">
+    <option value="nec" ${cur === 'nec' ? 'selected' : ''}>Necessario</option>
+    <option value="proc" ${cur === 'nec' ? '' : 'selected'}>Procedimento</option></select></label>`;
+  const area = 'width:100%;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px;color:var(--fg)';
+  let title, body;
+  if (kind === 'text'){
+    title = 'Testo: più passaggi';
+    body = `<div class="note">Incolla o scrivi il testo: ogni riga andata a capo diventa un passaggio separato.</div>
+      <textarea id="etText" rows="12" style="${area}"></textarea>${secSel('proc')}`;
+  } else if (kind === 'step'){
+    title = b ? 'Modifica passaggio' : 'Nuovo passaggio';
+    body = `<label class="note">Passaggio <input id="etText" type="text" value="${esc(b && b.text || '')}" placeholder="Es. Aggiungi {Tris} al tampone" style="width:100%"></label>
+      <label class="note" style="display:flex;gap:6px;align-items:center"><input id="etTbl" type="checkbox" ${b && b.type === 'table' ? 'checked' : ''}> È una tabella da compilare</label>
+      <label class="note">Colonne (separate da virgola) <input id="etCols" type="text" value="${esc(b && b.cols || '')}" placeholder="Posizione, Campione, Ora" style="width:100%"></label>
+      <label class="note">Righe <input id="etRows" type="number" min="1" value="${b && b.rows || 3}" style="width:100px"></label>
+      ${secSel(b ? b.sec : 'proc')}`;
+  } else if (kind === 'recipe'){
+    title = 'Ricetta';
+    const opts = protos.filter(x => x.kind === 'recipe').map(x => `<option value="${x.id}" ${b && b.id === x.id ? 'selected' : ''}>${esc(x.title)}</option>`).join('');
+    body = `<label class="note">Ricetta <select id="etRecSel" style="width:100%">${opts || '<option value="">Nessuna ricetta: creala nella scheda Ricette</option>'}</select></label>
+      <label class="note">Volume da preparare <input id="etVol" type="number" step="any" value="${b ? b.vol : ''}" style="width:150px"></label>
+      ${secSel(b ? b.sec : 'nec')}${fmtSelHTML(b ? b.fmt : 'list')}`;
+  } else {
+    title = 'Calcoli';
+    body = `<div class="note">Ingredienti con stock e concentrazione finale, e il volume da preparare. Le quantità si calcolano da sole.</div>
+      ${recipeEditorHTML(r, false)}${fmtSelHTML(r.pdf)}`;
+  }
+  $('entryTitle').textContent = title;
+  $('entryBody').innerHTML = body;
+  $('entrySave').textContent = idx === null ? 'Aggiungi al protocollo' : 'Salva';
+  $('entryModal').hidden = false;
+}
+function closeEntry(){ $('entryModal').hidden = true; entryState = null; }
+async function persistRecipe(p){
+  const {error} = await dbOp(curCal, 'protocols', 'update', {id: p.id, data: {recipe: p.recipe}});
+  if (error){ if (!pinError(error)) flash('Non salvato: ' + error.message); loadAll(); }
+}
+// salva la voce nel protocollo (nuova o modificata)
+async function saveEntry(){
+  const p = protos.find(x => x.id === protoOpen); if (!p || !entryState) return;
+  const r = recipeDefaults(parseRecipe(p.recipe));
+  const bl = getBlocks(r);
+  const {kind, idx} = entryState;
+  const put = block => { if (idx === null || idx === 'calc') bl.push(block); else bl[idx] = block; };
+  if (kind === 'calc'){
+    const tmp = {title: '', body: '', recipe: ''};
+    syncDraft(tmp);
+    const cr = parseRecipe(tmp.recipe);
+    r.base = cr.base;
+    r.items = (cr.items || []).filter(i => i.name);
+    r.fill = cr.fill;
+    r.samples = cr.samples;
+    r.own = true;
+    r.pdf = $('etFmt') ? $('etFmt').value : 'list';
+  } else if (kind === 'text'){
+    const lines = ($('etText').value || '').split('\n').map(s => s.trim()).filter(Boolean);
+    if (!lines.length){ flash('Scrivi almeno un passaggio.'); return; }
+    const sec = $('etSec').value;
+    const blocks = lines.map(t => ({type: 'text', text: t, sec}));
+    if (idx === null || idx === 'calc') bl.push(...blocks); else bl.splice(idx, 1, ...blocks);
+  } else if (kind === 'step'){
+    const text = $('etText').value.trim();
+    if (!text){ flash('Scrivi il passaggio.'); return; }
+    const sec = $('etSec').value;
+    put($('etTbl').checked
+      ? {type: 'table', text, cols: $('etCols').value.trim(), rows: +$('etRows').value || 1, sec}
+      : {type: 'text', text, sec});
+  } else if (kind === 'recipe'){
+    const sel = $('etRecSel'); const rec = sel && protos.find(x => x.id === sel.value);
+    if (!rec){ flash('Scegli una ricetta.'); return; }
+    put({type: 'recipe', id: rec.id, vol: +$('etVol').value || recipeDefaults(parseRecipe(rec.recipe)).base.value, sec: $('etSec').value, fmt: $('etFmt') ? $('etFmt').value : 'list'});
+  }
+  r.blocks = bl;
+  p.recipe = JSON.stringify(r);
+  closeEntry();
+  render();
+  await persistRecipe(p);
+}
+// sposta, elimina, togli calcoli
+async function entryAct(act, i){
+  const p = protos.find(x => x.id === protoOpen); if (!p) return;
+  const r = recipeDefaults(parseRecipe(p.recipe));
+  if (act === 'calcdel'){ r.own = false; r.items = []; }
+  else {
+    const bl = getBlocks(r);
+    if (act === 'up' && i > 0) [bl[i - 1], bl[i]] = [bl[i], bl[i - 1]];
+    if (act === 'down' && i < bl.length - 1) [bl[i], bl[i + 1]] = [bl[i + 1], bl[i]];
+    if (act === 'del') bl.splice(i, 1);
+    r.blocks = bl;
+  }
+  p.recipe = JSON.stringify(r);
+  render();
+  await persistRecipe(p);
+}
+
 // apre la finestra per scegliere giorno e ore del protocollo
 function openProtoPlace(pid = protoOpen){
   const p = protos.find(x => x.id === pid); if (!p) return;
@@ -1559,17 +1777,19 @@ async function revokeLinks(){
 
 // ---- colori: uno set per la modalità chiara e uno per la scura (salvati su questo dispositivo) ----
 const TH_DEF = {
-  light: {bg:'#e8f6ef', panel:'#ffffff', fg:'#3a1d2b', accent:'#c2457a', muted:'#6f7f76'},
-  dark:  {bg:'#1f141a', panel:'#2a1c24', fg:'#f7e6ee', accent:'#f08cb4', muted:'#b592a4'}
+  light: {bg:'#cfe9f5', panel:'#ffffff', fg:'#1f3a4d', accent:'#5a9bc2', muted:'#5f7d8c', day:'#d6ecf7', allday:'#eaf6fb', am:'#f7fcfe', pm:'#eef7fb', item:'#d4ebf6', bk:'#e2e8ee', line:'#c4dcea'},
+  dark:  {bg:'#1b2630', panel:'#22303b', fg:'#e6f1f8', accent:'#7fb8d9', muted:'#9bb3c2', day:'#2c4150', allday:'#283844', am:'#243440', pm:'#20303b', item:'#2d4a5c', bk:'#3f4a55', line:'#3a4f5e'}
 };
-const TH_KEYS = ['bg','panel','fg','accent','muted'];
+const TH_KEYS = ['bg','panel','fg','accent','muted','day','allday','am','pm','item','bk','line'];
+const TH_LABEL = {bg:'Sfondo', panel:'Riquadri', fg:'Testo', accent:'Accento', muted:'Secondario', day:'Intestazione giorni', allday:'Tutto il giorno', am:'Righe mattina', pm:'Righe pomeriggio', item:'Attività', bk:'Strumentazioni', line:'Linee'};
+const TH_VAR = {bg:'--bg', panel:'--panel', fg:'--fg', accent:'--accent', muted:'--muted', day:'--day-bg', allday:'--all-bg', am:'--am-bg', pm:'--pm-bg', item:'--accent-soft', bk:'--bk', line:'--line'};
 const isDarkMode = () => window.matchMedia('(prefers-color-scheme: dark)').matches;
 function themeSaved(){ try { return JSON.parse(localStorage.getItem('theme') || '{}'); } catch(_) { return {}; } }
 function themeFor(mode){ return {...TH_DEF[mode], ...(themeSaved()[mode] || {})}; }
 function applyTheme(){
   const t = themeFor(isDarkMode() ? 'dark' : 'light');
   const st = document.documentElement.style;
-  TH_KEYS.forEach(k => st.setProperty('--' + k, t[k]));
+  TH_KEYS.forEach(k => st.setProperty(TH_VAR[k], t[k]));
 }
 function fillTheme(){
   ['light','dark'].forEach(mode => {
@@ -1621,7 +1841,7 @@ function setBgImage(){
 function taskFromDb(r){
   let slot = r.slot || null;
   if (LEGACY_SLOT[slot]) slot = LEGACY_SLOT[slot];
-  return {id:r.id, title:r.title, day:r.day, slot, done:!!r.done, category:r.category||null, kind:r.kind||null, link:r.link||null, inst:r.inst||null, createdAt:r.created_at||0};
+  return {id:r.id, title:r.title, day:r.day, slot, done:!!r.done, category:r.category||null, kind:r.kind||null, link:r.link||null, inst:r.inst||null, note:r.note||null, createdAt:r.created_at||0};
 }
 function catFromDb(r){ return {id:r.id, name:r.name, color:r.color, position:r.position||0}; }
 function bkFromDb(r){ return {id:r.id, title:r.title, day:r.day||null, useDay:r.use_day||null, slot:r.slot||null, done:!!r.done, details:r.details||'', createdAt:r.created_at||0}; }
@@ -1964,11 +2184,11 @@ function chip(t, mode, withRange){
   const r = withRange ? parseSlot(t.slot) : null;
   const rl = r ? `<span class="rng">${HM(r.from)}–${HM(r.to)}</span>` : '';
   const btn = mode === 'del'
-    ? `<button type="button" class="x" data-act="sched" aria-label="Metti nel calendario" title="Metti nel calendario">📅</button><button type="button" class="x" data-act="del" aria-label="Elimina">✕</button>`
+    ? `<button type="button" class="x" data-act="note" aria-label="Note" title="Note">📝</button><button type="button" class="x" data-act="sched" aria-label="Metti nel calendario" title="Metti nel calendario">📅</button><button type="button" class="x" data-act="del" aria-label="Elimina">✕</button>`
     : `<button type="button" class="x" data-act="unsched" aria-label="Togli dal calendario">↩</button>`;
   return `<div class="chip ${col?'cat':''} ${t.kind==='booking'?'bk':''} ${t.done?'done':''} ${selectedId===t.id?'sel':''}"${style} data-task="${t.id}" draggable="true">
     <button type="button" class="ck" data-act="done" aria-label="Segna come fatta">${t.done?'✓':''}</button>
-    ${rl}<span class="ct" title="${esc(t.title)}">${esc(t.title)}</span>${btn}</div>`;
+    ${rl}<span class="ct" title="${esc(t.title)}">${esc(t.title)}</span>${t.note && mode === 'del' ? `<span class="note" style="font-size:11px;max-width:35%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">📝 ${esc(t.note)}</span>` : ''}${btn}</div>`;
 }
 function assignLanes(list){
   const ends = [];
@@ -2345,6 +2565,8 @@ root.addEventListener('click', e => {
   if (e.target.closest('#askOk')){ closeAsk(true); return; }
   if (e.target.id === 'bkModal'){ closeBkDetails(); return; }
   if (e.target.id === 'schedModal' || e.target.closest('#schCancel')){ closeSched(); return; }
+  if (e.target.id === 'noteModal' || e.target.closest('#noteClose')){ closeNote(); return; }
+  if (e.target.closest('#noteSave')){ saveNote(); return; }
   if (e.target.closest('#schSave')){ saveSched(); return; }
   if (e.target.closest('#back')){ goBack(); return; }
   if (e.target.closest('[data-cal-ren]')){ renameCalById(e.target.closest('[data-cal-ren]').dataset.calRen); return; }
@@ -2415,6 +2637,28 @@ root.addEventListener('click', e => {
   if (tabBtn){ protoTab = tabBtn.dataset.ptab; protoOpen = null; render(); return; }
   if (e.target.closest('#protoNew')){ protoNew(); return; }
   if (e.target.closest('#protoSave')){ protoSave(); return; }
+  if (e.target.closest('#protoPlus')){ $('plusMenu').hidden = !$('plusMenu').hidden; return; }
+  const plusBtn = e.target.closest('[data-plus]');
+  if (plusBtn){ $('plusMenu').hidden = true; openEntry(plusBtn.dataset.plus, null); return; }
+  const entBtn = e.target.closest('[data-ent]');
+  if (entBtn){
+    const act = entBtn.dataset.ent, i = entBtn.dataset.i;
+    if (act === 'edit'){
+      if (i === 'calc'){ openEntry('calc', 'calc'); return; }
+      const p = protos.find(x => x.id === protoOpen);
+      const b = p ? getBlocks(recipeDefaults(parseRecipe(p.recipe)))[+i] : null;
+      if (b) openEntry(b.type === 'recipe' ? 'recipe' : 'step', +i);
+      return;
+    }
+    if (act === 'calcdel'){ entryAct('calcdel', null); return; }
+    entryAct(act, +i);
+    return;
+  }
+  if (e.target.closest('#entryClose')){ closeEntry(); return; }
+  if (e.target.closest('#entrySave')){ saveEntry(); return; }
+  if (e.target.closest('#entryExp')){ $('entryBody').classList.toggle('exp'); return; }
+  if (e.target.id === 'entryModal'){ closeEntry(); return; }
+  if (!e.target.closest('#plusMenu') && !e.target.closest('#protoPlus')) { const pm = $('plusMenu'); if (pm) pm.hidden = true; }
   if (e.target.closest('#protoExport')){ exportProtos(); return; }
   if (e.target.closest('#protoInstSave')){ saveInst(); return; }
   if (e.target.closest('#protoEditG')){ protoMode = 'edit'; render(); return; }
@@ -2430,11 +2674,7 @@ root.addEventListener('click', e => {
     const n = rc.samples ? (+($('rcN') && $('rcN').value) || 1) : 1;
     const rows = calcItems(rc, target, n).filter(c => c.name);
     const td = 'border:1px solid #999;padding:4px 6px';
-    const extra = rows.length
-      ? `<h3>Quantità</h3><p>${esc(rc.base.label)}: ${fmtNum(target)} ${esc(rc.base.unit)}${rc.samples ? ` · campioni: ${n}` : ''}</p>
-         <table style="border-collapse:collapse;width:100%">${rows.map(c =>
-           `<tr><td style="${td}">${esc(c.name)}</td><td style="${td};text-align:right">${fmtNum(c.value)} ${esc(c.unit)}</td></tr>`).join('')}</table>`
-      : '';
+    const extra = (rc.pdf === 'line' ? lineRecipeHTML : compactRecipeHTML)('Calcoli' + (rc.samples ? ` · campioni: ${n}` : ''), rc.base.unit, target, rows);
     const tdp = 'border:1px solid #999;padding:4px 6px';
     const stepsPrint = rc.steps.length ? '<h3>Passaggi</h3>' + rc.steps.map((st, si) => {
       let h = `<p><b>${si + 1}.</b> ${esc(st.text)}</p>`;
@@ -2522,6 +2762,16 @@ root.addEventListener('click', e => {
       render();
     }
     if (pa.dataset.protoAct === 'rcadd' || pa.dataset.protoAct === 'rcdel'){
+      if (!$('entryModal').hidden){
+        // ingredienti nel popup dei calcoli: si lavora solo sul popup, il protocollo resta com'è
+        const tmp = {title: '', body: '', recipe: ''};
+        syncDraft(tmp);
+        const rr = recipeDefaults(parseRecipe(tmp.recipe));
+        if (pa.dataset.protoAct === 'rcadd') rr.items.push({name: '', qty: 0, unit: '', mode: 'dil'});
+        else rr.items.splice(+pa.dataset.i, 1);
+        $('entryBody').innerHTML = `<div class="note">Ingredienti con stock e concentrazione finale, e il volume da preparare. Le quantità si calcolano da sole.</div>${recipeEditorHTML(rr, false)}${fmtSelHTML($('etFmt') ? $('etFmt').value : 'list')}`;
+        return;
+      }
       const p = protos.find(x => x.id === protoOpen); if (!p) return;
       syncDraft(p);
       const r = recipeDefaults(parseRecipe(p.recipe));
@@ -2548,6 +2798,7 @@ root.addEventListener('click', e => {
     if (act.dataset.act === 'unsched'){ if (selectedId === id) selectedId = null; saveChange(id, {day:null, slot:null}); }
     if (act.dataset.act === 'del') removeTask(id);
     if (act.dataset.act === 'sched') openSched(id);
+    if (act.dataset.act === 'note') openNote(id);
     return;
   }
   const zone = e.target.closest('[data-drop]');
