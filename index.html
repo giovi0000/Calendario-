@@ -265,6 +265,15 @@ input,select,textarea{max-width:100%}
       </div>
     </div>
   </div>
+  <div class="modalback" id="shareModal" hidden>
+    <div class="modal" style="max-width:460px;width:100%">
+      <div class="mhead"><h2 id="shareTitle">Condividi</h2><button type="button" class="btn" id="shareClose">Chiudi</button></div>
+      <div style="padding:12px;display:grid;gap:8px">
+        <div class="note">Scegli il calendario in cui copiare il protocollo. Ci saranno anche le ricette che usa.</div>
+        <div id="shareList" style="display:grid;gap:8px"></div>
+      </div>
+    </div>
+  </div>
   <div id="status"></div>
 
   <div class="modalback" id="modal" hidden>
@@ -1015,8 +1024,7 @@ function protoHTML(){
     const rows = list.map(p => `<div class="protorow">
         <span class="ct">${esc(p.title)}</span>
         <button type="button" class="btn sm" data-proto-act="use" data-id="${p.id}">Usa / PDF</button>
-        <button type="button" class="btn sm" data-proto-act="edit" data-id="${p.id}">Modifica</button>
-        <button type="button" class="x trash" data-proto-act="del" data-id="${p.id}" aria-label="Elimina" title="Elimina">🗑</button>
+        ${moreMenu(p.id, [{attr:'data-pm-edit', label:'Modifica'}, {attr:'data-pm-exp', label:'Esporta'}, {attr:'data-pm-share', label:'Condividi'}, {attr:'data-pm-del', label:'Elimina', danger:true}])}
       </div>`).join('');
     return `<section class="panel" style="padding:12px">
       <div style="display:flex;gap:6px;margin-bottom:10px">
@@ -1470,6 +1478,57 @@ async function saveNote(){
   closeNote(); render();
   const {error} = await dbOp(curCal, 'tasks', 'update', {id: t.id, data: {note: t.note}});
   if (error){ if (!pinError(error)) flash('Nota non salvata: ' + error.message); loadAll(); }
+}
+// ---- protocolli: esporta uno, condividi con un altro calendario ----
+// raccoglie il protocollo e le ricette che usa (anche quelle nei blocchi)
+function protoWithRecipes(pid){
+  const p = protos.find(x => x.id === pid); if (!p) return [];
+  const ids = new Set([pid]);
+  getBlocks(recipeDefaults(parseRecipe(p.recipe))).forEach(b => { if (b.type === 'recipe') ids.add(b.id); });
+  return protos.filter(x => ids.has(x.id));
+}
+function exportOne(pid){
+  const list = protoWithRecipes(pid); if (!list.length) return;
+  const items = list.map(p => ({id: p.id, kind: p.kind, title: p.title, recipe: p.recipe || ''}));
+  const blob = new Blob([JSON.stringify({app: 'calendario', version: 1, items}, null, 2)], {type: 'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `protocollo-${slug(list[0].title)}.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  flash('Protocollo esportato: puoi inviare il file o importarlo in un altro calendario.');
+}
+let sharePid = null;
+function openShare(pid){
+  sharePid = pid;
+  const p = protos.find(x => x.id === pid); if (!p) return;
+  const others = calendars.filter(c => c.id !== curCal);
+  $('shareTitle').textContent = `Condividi “${p.title}”`;
+  $('shareList').innerHTML = others.length
+    ? others.map(c => `<button type="button" class="calbtn" data-share-to="${c.id}">${lockLabel(c)}${esc(c.name)}${c.groupId ? ` · ${esc(grpPath(c.groupId))}` : ''}</button>`).join('')
+    : '<div class="empty">Non ci sono altri calendari. Creane uno con “+ Calendario”.</div>';
+  $('shareModal').hidden = false;
+}
+function closeShare(){ $('shareModal').hidden = true; sharePid = null; }
+async function shareProtoTo(target){
+  const tc = calById(target); if (!tc || !sharePid) return;
+  if (tc.protected && !(await guardPin(tc))) return;
+  const list = protoWithRecipes(sharePid); if (!list.length) return;
+  const map = {};
+  list.forEach(x => { map[x.id] = crypto.randomUUID(); });
+  const now = Date.now();
+  const rows = list.map((x, k) => {
+    const rc = parseRecipe(x.recipe || '');
+    if (Array.isArray(rc.blocks)) rc.blocks = rc.blocks.map(b => (b.type === 'recipe' && map[b.id]) ? {...b, id: map[b.id]} : b);
+    if (Array.isArray(rc.imports)) rc.imports = rc.imports.map(i => map[i.id] ? {...i, id: map[i.id]} : i);
+    return {id: map[x.id], group_id: null, calendar_id: target, kind: x.kind || 'protocol', title: x.title, body: '',
+            recipe: Object.keys(rc).length ? JSON.stringify(rc) : '', created_at: now + k};
+  });
+  const results = await Promise.all(rows.map(r => dbOp(target, 'protocols', 'insert', {data: r})));
+  const err = results.find(r => r.error);
+  closeShare();
+  if (err){ if (!pinError(err.error)) flash('Condivisione non riuscita: ' + err.error.message); }
+  else flash(`Protocollo copiato in “${tc.name}”.`);
 }
 // ---- metti nel calendario: scegli giorno e ore (utile da telefono) ----
 let schedId = null;
@@ -2684,6 +2743,16 @@ root.addEventListener('click', e => {
   if (e.target.closest('#entryExp')){ $('entryBody').classList.toggle('exp'); return; }
   if (e.target.id === 'entryModal'){ closeEntry(); return; }
   if (!e.target.closest('#plusMenu') && !e.target.closest('#protoPlus')) { const pm = $('plusMenu'); if (pm) pm.hidden = true; }
+  if (e.target.closest('.menuitem')) document.querySelectorAll('.menu').forEach(m => { m.hidden = true; });
+  const pmEdit = e.target.closest('[data-pm-edit]'), pmExp = e.target.closest('[data-pm-exp]'),
+        pmShare = e.target.closest('[data-pm-share]'), pmDel = e.target.closest('[data-pm-del]');
+  if (pmEdit){ protoOpen = pmEdit.dataset.pmEdit; protoMode = 'edit'; render(); return; }
+  if (pmExp){ exportOne(pmExp.dataset.pmExp); return; }
+  if (pmShare){ openShare(pmShare.dataset.pmShare); return; }
+  if (pmDel){ protoDelete(pmDel.dataset.pmDel); return; }
+  const st = e.target.closest('[data-share-to]');
+  if (st){ shareProtoTo(st.dataset.shareTo); return; }
+  if (e.target.id === 'shareModal' || e.target.closest('#shareClose')){ closeShare(); return; }
   if (e.target.closest('#protoExport')){ exportProtos(); return; }
   if (e.target.closest('#protoInstSave')){ saveInst(); return; }
   if (e.target.closest('#protoEditG')){ protoMode = 'edit'; render(); return; }
