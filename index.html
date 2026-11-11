@@ -43,6 +43,8 @@ input,select{background:var(--bg);border:1px solid var(--line);border-radius:8px
 #top .ttl{font-weight:650;font-size:15px}
 .spacer{flex:1}
 
+.rcrow [hidden]{display:none!important}
+.calcfields{display:flex;gap:6px;flex-wrap:wrap;flex:1 1 100%;min-width:0}
 /* home e laboratori */
 .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px 18px;text-align:left;display:flex;flex-direction:column;gap:6px}
@@ -524,7 +526,7 @@ function recipeDefaults(r){
   return {
     base: {label: r.base?.label || 'Volume', value: +r.base?.value || 100, unit: r.base?.unit || 'ml'},
     samples: !!r.samples,
-    items: (r.own !== false && Array.isArray(r.items)) ? r.items : [],
+    items: (r.own !== false && Array.isArray(r.items)) ? r.items.map(migrateItem) : [],
     own: r.own !== false,
     pdf: r.pdf === 'line' ? 'line' : 'list',
     steps: Array.isArray(r.steps) ? r.steps : [],
@@ -535,29 +537,112 @@ function recipeDefaults(r){
   };
 }
 const VOL_F = {'µl':0.001, 'ml':1, 'l':1000};          // in millilitri
-const CONC_F = {'M':1, 'mM':1e-3, 'µM':1e-6, 'nM':1e-9, '%':1, 'X':1}; // molare, oppure rapporto (%, X)
-// stock e finale si possono confrontare solo se sono nella stessa famiglia (molari, percentuali o X)
-const CONC_FAM = {'M':'molare', 'mM':'molare', 'µM':'molare', 'nM':'molare', '%':'percentuale', 'X':'X'};
+// Unità riconosciute: ogni unità appartiene a una famiglia (mol, g, U, rapporto) e ha un fattore per l'unità base.
+// Le concentrazioni sono per litro: M = mol/L, mg/ml = g/L, U/µl = U/L, ecc.
+const CONC_U = {
+  'M':{f:'mol', k:1}, 'mM':{f:'mol', k:1e-3}, 'µM':{f:'mol', k:1e-6}, 'nM':{f:'mol', k:1e-9},
+  'g/l':{f:'g', k:1}, 'mg/ml':{f:'g', k:1}, 'µg/ml':{f:'g', k:1e-3}, 'mg/µl':{f:'g', k:1e3}, 'µg/µl':{f:'g', k:1}, 'ng/µl':{f:'g', k:1e-3},
+  'U/l':{f:'U', k:1}, 'U/ml':{f:'U', k:1e3}, 'U/µl':{f:'U', k:1e6}, 'mU/µl':{f:'U', k:1e3},
+  'U/mg':{f:'U', k:1e3, spec:true},   // attività specifica: serve la concentrazione proteica (mg/ml)
+  '%':{f:'ratio', k:1}, 'X':{f:'ratio', k:1}
+};
+const AMT_U = {
+  'mol':{f:'mol', k:1}, 'mmol':{f:'mol', k:1e-3}, 'µmol':{f:'mol', k:1e-6}, 'nmol':{f:'mol', k:1e-9},
+  'g':{f:'g', k:1}, 'mg':{f:'g', k:1e-3}, 'µg':{f:'g', k:1e-6}, 'ng':{f:'g', k:1e-9},
+  'U':{f:'U', k:1}, 'mU':{f:'U', k:1e-3}, 'kU':{f:'U', k:1e3}
+};
+const UNIT_GROUPS = [
+  ['Molare', ['M','mM','µM','nM']],
+  ['Massa su volume', ['g/l','mg/ml','µg/ml','mg/µl','µg/µl','ng/µl']],
+  ['Attività enzimatica', ['U/µl','mU/µl','U/ml','U/l','U/mg']],
+  ['Rapporto', ['%','X']],
+  ['Quantità totale', ['mol','mmol','µmol','nmol','g','mg','µg','ng','U','mU','kU']]
+];
+// scala di unità per mostrare il risultato nella forma più leggibile (es. 0,25 ml → 250 µl)
+const LADDER = {
+  L:[['l',1], ['ml',1e-3], ['µl',1e-6]],
+  g:[['g',1], ['mg',1e-3], ['µg',1e-6], ['ng',1e-9]],
+  mol:[['mol',1], ['mmol',1e-3], ['µmol',1e-6], ['nmol',1e-9]],
+  U:[['U',1], ['mU',1e-3]]
+};
+function autoUnit(x, fam){
+  const lad = LADDER[fam], a = Math.abs(x);
+  const hit = lad.find(([u, f]) => a >= f) || lad[lad.length - 1];
+  return {value: x / hit[1], unit: hit[0]};
+}
+// vecchi ingredienti "Diluizione" (ci, cf) diventano "Calcolo"
+function migrateItem(it){
+  if (!it || it.mode !== 'dil') return it;
+  return {name: it.name, qty: it.qty, unit: it.unit, mode: 'calc',
+          tv: +it.cf || 0, tu: it.cfu || '', sv: +it.ci || 0, su: it.ciu || '', mw: 0, prot: 0};
+}
+// legge le righe della ricetta dal form
+function readRecipeRows(){
+  return [...document.querySelectorAll('[data-rc-row]')].map(row => {
+    const g = f => { const el = row.querySelector(`[data-rc="${f}"]`); return el ? el.value : ''; };
+    return {name: g('name').trim(), mode: g('mode'), qty: +g('qty') || 0, unit: g('unit').trim(),
+            tv: +g('tv') || 0, tu: g('tu'), sv: +g('sv') || 0, su: g('su'),
+            mw: +g('mw') || 0, prot: +g('prot') || 0};
+  });
+}
+// calcolo di una riga; VL = volume finale in litri
+function calcOne(it, VL){
+  const err = msg => ({name: it.name, value: NaN, unit: msg});
+  const tu = it.tu || '', tv = +it.tv || 0;
+  if (!(tv > 0) || !tu) return err('manca il valore finale');
+  const isConc = !!CONC_U[tu];
+  const tgt = CONC_U[tu] || AMT_U[tu];
+  if (!tgt) return err('unità non valida');
+  if (tgt.spec) return err('U/mg solo come stock');
+  const hasStock = (+it.sv > 0) && !!it.su;
+  const volRes = L => ({name: it.name, vol: true, L, warn: L > VL * 1.000001});
+  const amtRes = (x, fam) => { const a = autoUnit(x, fam); return {name: it.name, value: a.value, unit: a.unit}; };
+  // percentuali e X: il rapporto conta, stock e finale devono avere la stessa unità
+  if (tgt.f === 'ratio'){
+    if (!hasStock) return err('serve lo stock');
+    const sc0 = CONC_U[it.su];
+    if (!sc0 || sc0.f !== 'ratio') return err('stock non confrontabile');
+    if (it.su !== tu) return err('usa la stessa unità (% o X)');
+    return volRes(VL * tv / it.sv);
+  }
+  // quantità finale da preparare, nella sua famiglia (mol, g, U)
+  const fam = tgt.f;
+  const N = isConc ? tv * tgt.k * VL : tv * tgt.k;
+  if (!hasStock){
+    // senza stock: quanto pesare o quante unità servono
+    if (fam === 'mol' && it.mw > 0) return amtRes(N * it.mw, 'g');
+    return amtRes(N, fam);
+  }
+  const sc = CONC_U[it.su];
+  if (!sc || sc.f === 'ratio') return err('unità stock non valida');
+  let s;
+  if (sc.spec){
+    if (!(it.prot > 0)) return err('serve la proteina (mg/ml)');
+    s = it.sv * 1000 * it.prot;          // U/mg × mg/ml × 1000 = U/L
+  } else s = it.sv * sc.k;
+  if (sc.f !== fam){
+    // mol ↔ g con il peso molecolare
+    if (!(it.mw > 0)) return err('serve il PM');
+    if (fam === 'mol' && sc.f === 'g') s = s / it.mw;
+    else if (fam === 'g' && sc.f === 'mol') s = s * it.mw;
+    else return err('unità incompatibili');
+  }
+  if (!(s > 0)) return err('stock non valido');
+  return volRes(N / s);                  // Ci·Vi = Cf·Vf: Vi = N / Cstock
+}
 function calcItems(r, target, n){
   const k = target / r.base.value;
   const totalMl = target * (VOL_F[r.base.unit] || 1);
+  const VL = totalMl / 1000;
   const out = r.items.map(it => {
+    if (it.mode === 'calc') return calcOne(it, VL);
     const q = +it.qty || 0;
-    if (it.mode === 'dil'){
-      // Ci·Vi = Cf·Vf: Vi = Cf·Vf / Ci, con Vf il volume totale da preparare.
-      // Con % e X basta che stock e finale abbiano la stessa unità (il rapporto conta).
-      if (CONC_FAM[it.ciu] !== CONC_FAM[it.cfu]) return {name: it.name, unit: 'ml', value: NaN, dil: true};
-      const ci = (+it.ci || 0) * (CONC_F[it.ciu] || 1);
-      const cf = (+it.cf || 0) * (CONC_F[it.cfu] || 1);
-      const vi = ci > 0 ? (cf * totalMl) / ci : 0;
-      return {name: it.name, unit: 'ml', value: vi, dil: true};
-    }
     const value = it.mode === 'sample' ? q * n : (it.mode === 'fixed' ? q : q * k);
     return {name: it.name, unit: it.unit || '', value};
   });
   // quanto occupa ogni ingrediente liquido, in ml
   const usedOf = o => {
-    if (o.dil) return Number.isFinite(o.value) ? o.value : 0;
+    if (o.vol) return Number.isFinite(o.L) ? o.L * 1000 : 0;
     if (VOL_F[o.unit] !== undefined) return Number.isFinite(o.value) ? o.value * VOL_F[o.unit] : 0;
     return 0;
   };
@@ -566,16 +651,17 @@ function calcItems(r, target, n){
   if (fi !== null){
     const used = out.reduce((s, o, i) => i === fi ? s : s + usedOf(o), 0);
     const rest = totalMl - used;
-    out[fi] = {...out[fi], unit: 'ml', value: rest, warn: rest < 0, filler: true};
-    return out;
-  }
-  if (r.fill === 'none') return out;   // solo quantità singole: nessun riempimento a volume
-  // altrimenti: H2O = ciò che resta, sempre in fondo
-  if (out.length){
+    out[fi] = {name: out[fi].name, vol: true, L: rest / 1000, warn: rest < 0, filler: true};
+  } else if (r.fill !== 'none' && out.length){
+    // altrimenti: H2O = ciò che resta, sempre in fondo
     const rest = totalMl - out.reduce((s, o) => s + usedOf(o), 0);
-    out.push({name: rest < 0 ? 'H2O: volume insufficiente' : 'H2O (q.b. a volume)', unit: 'ml', value: rest, warn: rest < 0});
+    out.push({name: rest < 0 ? 'H2O: volume insufficiente' : 'H2O (q.b. a volume)', vol: true, L: rest / 1000, warn: rest < 0});
   }
-  return out;
+  return out.map(o => {
+    if (!o.vol) return o;
+    const a = autoUnit(o.L, 'L');
+    return {name: o.name, value: a.value, unit: a.unit + (o.warn ? ' ⚠ più del volume' : ''), warn: !!o.warn, filler: !!o.filler};
+  });
 }
 const colsOf = st => (st.cols || '').split(',').map(s => s.trim()).filter(Boolean);
 // passaggi del protocollo; quelli con tabella diventano celle da compilare
@@ -592,9 +678,10 @@ function stepTableHTML(st, si){
     <tr>${cols.map(c => `<th style="text-align:left;padding:4px;border-bottom:1px solid var(--line)">${esc(c)}</th>`).join('')}</tr>${body}</table></div>`;
 }
 function fmtNum(x){
-  if (!Number.isFinite(x)) return 'unità diverse';
+  if (!Number.isFinite(x)) return '—';
   if (Number.isInteger(x)) return String(x);
-  return (Math.round(x * 100) / 100).toString().replace('.', ',');
+  const s = Math.abs(x) >= 10 ? x.toFixed(1).replace(/\.0$/, '') : String(Number(x.toPrecision(3)));
+  return s.replace('.', ',');
 }
 // ---- strumenti da prenotare, con il giorno in cui prenotarli ----
 function toolsEditorHTML(rc){
@@ -760,24 +847,31 @@ function blocksPrint(rc){
 }
 
 function recipeEditorHTML(r, withSteps = true){
-  const cu = sel => ['M','mM','µM','nM','%','X'].map(u => `<option value="${u}" ${sel === u ? 'selected' : ''}>${u}</option>`).join('');
-  const rows = r.items.map((it, i) => `<div class="rcrow" data-rc-row="${i}">
+  const unitOpt = (field, sel, blank) => `<select data-rc="${field}">${blank !== undefined ? `<option value="" ${!sel ? 'selected' : ''}>${blank}</option>` : ''}${UNIT_GROUPS.map(([lab, us]) => `<optgroup label="${lab}">${us.map(u => `<option value="${u}" ${sel === u ? 'selected' : ''}>${u}</option>`).join('')}</optgroup>`).join('')}</select>`;
+  const rows = r.items.map((it, i) => {
+    const calc = it.mode === 'calc';
+    return `<div class="rcrow" data-rc-row="${i}">
       <input data-rc="name" type="text" value="${esc(it.name || '')}" placeholder="Ingrediente o materiale">
       <select data-rc="mode">
         <option value="vol" ${(!it.mode || it.mode === 'vol') ? 'selected' : ''}>Cambia con il volume</option>
         <option value="sample" ${it.mode === 'sample' ? 'selected' : ''}>Per campione</option>
         <option value="fixed" ${it.mode === 'fixed' ? 'selected' : ''}>Fisso</option>
-        <option value="dil" ${it.mode === 'dil' ? 'selected' : ''}>Diluizione Ci·Vi = Cf·Vf</option>
+        <option value="calc" ${calc ? 'selected' : ''}>Calcolo (stock, PM, unità)</option>
       </select>
-      <input data-rc="qty" type="number" step="any" value="${it.qty ?? ''}" placeholder="Quantità">
-      <input data-rc="unit" type="text" value="${esc(it.unit || '')}" placeholder="Unità">
-      <input data-rc="ci" type="number" step="any" value="${it.ci ?? ''}" placeholder="Ci (stock)">
-      <select data-rc="ciu">${cu(it.ciu || 'M')}</select>
-      <input data-rc="cf" type="number" step="any" value="${it.cf ?? ''}" placeholder="Cf (finale)">
-      <select data-rc="cfu">${cu(it.cfu || 'mM')}</select>
+      <input data-simple data-rc="qty" type="number" step="any" value="${it.qty ?? ''}" placeholder="Quantità" ${calc ? 'hidden' : ''}>
+      <input data-simple data-rc="unit" type="text" value="${esc(it.unit || '')}" placeholder="Unità" ${calc ? 'hidden' : ''}>
+      <div class="calcfields" data-calconly ${calc ? '' : 'hidden'}>
+        <input data-rc="tv" type="number" step="any" value="${it.tv || ''}" placeholder="Valore finale">
+        ${unitOpt('tu', it.tu, 'unità finale')}
+        <input data-rc="sv" type="number" step="any" value="${it.sv || ''}" placeholder="Stock (vuoto = nessuno)">
+        ${unitOpt('su', it.su, 'nessuno')}
+        <input data-rc="mw" type="number" step="any" value="${it.mw || ''}" placeholder="PM (g/mol)">
+        <input data-rc="prot" type="number" step="any" value="${it.prot || ''}" placeholder="Proteina (mg/ml)">
+      </div>
       <span class="note" data-rcout="${i}" style="flex:1 1 130px;font-weight:650;color:var(--fg)"></span>
       <button type="button" class="x trash" data-proto-act="rcdel" data-i="${i}" aria-label="Togli" title="Togli">✕</button>
-    </div>`).join('');
+    </div>`;
+  }).join('');
   const stepRows = r.steps.map((st, i) => `<div class="rcrow" data-st="${i}">
       <input data-st-f="text" type="text" value="${esc(st.text || '')}" placeholder="Passo, per esempio: caricare i campioni">
       <label class="note" style="display:flex;gap:4px;align-items:center"><input data-st-f="tbl" type="checkbox" ${st.tbl ? 'checked' : ''}> Tabella</label>
@@ -804,7 +898,7 @@ function recipeEditorHTML(r, withSteps = true){
     ${rows || '<div class="empty">Nessun ingrediente ancora.</div>'}
     <div class="note" id="rcH2O" style="font-weight:650;color:var(--fg)"></div>
     <div><button type="button" class="btn" data-proto-act="rcadd">+ Ingrediente</button></div>
-    <div class="note">Cambia con il volume: quantità proporzionale al valore base. Per campione: quantità × numero di campioni. Fisso: quantità uguale sempre. Diluizione: inserisci la concentrazione iniziale (Ci) e quella finale (Cf) con la stessa unità (M, mM, µM, nM, % oppure X). Il programma calcola da solo quanto stock serve sul volume finale con Ci·Vi = Cf·Vf, e l'H2O è il resto. Esempi: 10X → 1X; 10% → 2%.</div>
+    <div class="note">Cambia con il volume: quantità proporzionale al volume finale. Per campione: quantità × numero di campioni. Fisso: sempre la stessa quantità. Calcolo: scrivi il valore finale (es. 1 mM, 5 mg, 100 U) e, se c'è, lo stock (es. 10 mM, 2 U/µl). Senza stock il programma dice quanto pesare o quante unità servono; con il PM (g/mol) passa da moli a grammi. Per U/mg serve anche la proteina in mg/ml. L'H2O è il resto per arrivare al volume.</div>
     ${withSteps ? stepsEditor : ''}
   </fieldset>`;
 }
@@ -813,16 +907,7 @@ function syncDraft(p){
   const t = $('protoTitleEd'); if (t) p.title = t.value.trim() || p.title;
   const b = $('protoBody'); if (b) p.body = b.value;
   if ($('rcBaseVal')){
-    const items = [...document.querySelectorAll('[data-rc-row]')].map(row => ({
-      name: row.querySelector('[data-rc="name"]').value.trim(),
-      qty: +row.querySelector('[data-rc="qty"]').value || 0,
-      unit: row.querySelector('[data-rc="unit"]').value.trim(),
-      mode: row.querySelector('[data-rc="mode"]').value,
-      ci: +row.querySelector('[data-rc="ci"]').value || 0,
-      ciu: row.querySelector('[data-rc="ciu"]').value,
-      cf: +row.querySelector('[data-rc="cf"]').value || 0,
-      cfu: row.querySelector('[data-rc="cfu"]').value
-    }));
+    const items = readRecipeRows();
     const steps = [...document.querySelectorAll('[data-st]')].map(row => ({
       text: row.querySelector('[data-st-f="text"]').value.trim(),
       tbl: row.querySelector('[data-st-f="tbl"]').checked,
@@ -852,26 +937,22 @@ function syncDraft(p){
 // tabella della ricetta in modifica: quantità per ogni ingrediente e riga H2O/a volume
 function refreshRecipeEdit(){
   if (!$('rcBaseVal')) return;
-  const items = [...document.querySelectorAll('[data-rc-row]')].map(row => ({
-    name: row.querySelector('[data-rc="name"]').value.trim(),
-    qty: +row.querySelector('[data-rc="qty"]').value || 0,
-    unit: row.querySelector('[data-rc="unit"]').value.trim(),
-    mode: row.querySelector('[data-rc="mode"]').value,
-    ci: +row.querySelector('[data-rc="ci"]').value || 0,
-    ciu: row.querySelector('[data-rc="ciu"]').value,
-    cf: +row.querySelector('[data-rc="cf"]').value || 0,
-    cfu: row.querySelector('[data-rc="cfu"]').value
-  }));
+  document.querySelectorAll('[data-rc-row]').forEach(row => {
+    const calc = row.querySelector('[data-rc="mode"]').value === 'calc';
+    row.querySelectorAll('[data-calconly]').forEach(el => el.hidden = !calc);
+    row.querySelectorAll('[data-simple]').forEach(el => el.hidden = calc);
+  });
+  const items = readRecipeRows();
   const r = {base: {label: '', value: +$('rcBaseVal').value || 1, unit: $('rcBaseUnit').value.trim() || 'ml'},
              items, fill: $('rcFill') ? $('rcFill').value : 'h2o'};
   const out = calcItems(r, r.base.value, 1);
   items.forEach((_, i) => {
     const el = document.querySelector(`[data-rcout="${i}"]`);
-    if (el){ const o = out[i]; el.textContent = o ? (Number.isFinite(o.value) ? `${fmtNum(o.value)} ${o.unit}` : 'unità diverse') : ''; }
+    if (el){ const o = out[i]; el.textContent = o ? `${fmtNum(o.value)} ${o.unit}` : ''; }
   });
   const extra = out[items.length];
   const h = $('rcH2O');
-  if (h) h.textContent = (extra && !extra.filler) ? `${extra.name}: ${fmtNum(extra.value)} ml` : '';
+  if (h) h.textContent = (extra && !extra.filler) ? `${extra.name}: ${fmtNum(extra.value)} ${extra.unit}` : '';
 }
 // quantità inserite nei passaggi tra graffe, es. {Tris}: si aggiornano con il volume scelto
 function refreshStepCalcs(){
@@ -2871,7 +2952,7 @@ root.addEventListener('click', e => {
         const tmp = {title: '', body: '', recipe: ''};
         syncDraft(tmp);
         const rr = recipeDefaults(parseRecipe(tmp.recipe));
-        if (pa.dataset.protoAct === 'rcadd') rr.items.push({name: '', qty: 0, unit: '', mode: 'dil'});
+        if (pa.dataset.protoAct === 'rcadd') rr.items.push({name: '', qty: 0, unit: '', mode: 'calc'});
         else rr.items.splice(+pa.dataset.i, 1);
         $('entryBody').innerHTML = `<div class="note">Ingredienti con stock e concentrazione finale, e il volume da preparare. Le quantità si calcolano da sole.</div>${recipeEditorHTML(rr, false)}${fmtSelHTML($('etFmt') ? $('etFmt').value : 'list')}`;
         return;
@@ -2879,7 +2960,7 @@ root.addEventListener('click', e => {
       const p = protos.find(x => x.id === protoOpen); if (!p) return;
       syncDraft(p);
       const r = recipeDefaults(parseRecipe(p.recipe));
-      if (pa.dataset.protoAct === 'rcadd') r.items.push({name: '', qty: 0, unit: '', mode: p.kind === 'recipe' ? 'dil' : 'vol'});
+      if (pa.dataset.protoAct === 'rcadd') r.items.push({name: '', qty: 0, unit: '', mode: p.kind === 'recipe' ? 'calc' : 'vol'});
       else r.items.splice(+pa.dataset.i, 1);
       p.recipe = JSON.stringify(r);
       render();
