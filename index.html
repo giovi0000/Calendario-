@@ -573,7 +573,7 @@ function autoUnit(x, fam){
 function migrateItem(it){
   if (!it || it.mode !== 'dil') return it;
   return {name: it.name, qty: it.qty, unit: it.unit, mode: 'calc',
-          tv: +it.cf || 0, tu: it.cfu || '', sv: +it.ci || 0, su: it.ciu || '', mw: 0};
+          tv: +it.cf || 0, tu: it.cfu || '', sv: +it.ci || 0, su: it.ciu || '', pow: false, mw: 0};
 }
 // legge le righe della ricetta dal form
 function readRecipeRows(){
@@ -581,7 +581,7 @@ function readRecipeRows(){
     const g = f => { const el = row.querySelector(`[data-rc="${f}"]`); return el ? el.value : ''; };
     return {name: g('name').trim(), mode: g('mode'), qty: +g('qty') || 0, unit: g('unit').trim(),
             tv: +g('tv') || 0, tu: g('tu'), sv: +g('sv') || 0, su: g('su'),
-            mw: +g('mw') || 0};
+            pow: !!(row.querySelector('[data-rc="pow"]') || {}).checked, mw: +g('mw') || 0};
   });
 }
 // calcolo di una riga; VL = volume finale in litri
@@ -593,6 +593,7 @@ function calcOne(it, VL){
   const tgt = CONC_U[tu] || AMT_U[tu];
   if (!tgt) return err('unità non valida');
   const hasStock = (+it.sv > 0) && !!it.su;
+  const PM = it.pow && it.mw > 0 ? it.mw : 0;   // il PM serve solo per le polveri
   const volRes = L => ({name: it.name, vol: true, L, warn: L > VL * 1.000001});
   const amtRes = (x, fam) => { const a = autoUnit(x, fam); return {name: it.name, value: a.value, unit: a.unit}; };
   // percentuali e X: il rapporto conta, stock e finale devono avere la stessa unità
@@ -608,7 +609,8 @@ function calcOne(it, VL){
   const N = isConc ? tv * tgt.k * VL : tv * tgt.k;
   if (!hasStock){
     // senza stock: quanto pesare o quante unità servono
-    if (fam === 'mol' && it.mw > 0) return amtRes(N * it.mw, 'g');
+    if (fam === 'mol' && PM > 0) return amtRes(N * PM, 'g');
+    if (fam === 'mol' && it.pow) return err('serve il PM della polvere');
     return amtRes(N, fam);
   }
   const sc = CONC_U[it.su];
@@ -616,9 +618,9 @@ function calcOne(it, VL){
   let s = it.sv * sc.k;
   if (sc.f !== fam){
     // mol ↔ g con il peso molecolare
-    if (!(it.mw > 0)) return err('serve il PM');
-    if (fam === 'mol' && sc.f === 'g') s = s / it.mw;
-    else if (fam === 'g' && sc.f === 'mol') s = s * it.mw;
+    if (!(PM > 0)) return err('serve il PM (spunta Polvere)');
+    if (fam === 'mol' && sc.f === 'g') s = s / PM;
+    else if (fam === 'g' && sc.f === 'mol') s = s * PM;
     else return err('unità incompatibili');
   }
   if (!(s > 0)) return err('stock non valido');
@@ -859,7 +861,8 @@ function recipeEditorHTML(r, withSteps = true){
         ${unitOpt('tu', it.tu, 'unità finale')}
         <input data-rc="sv" type="number" step="any" value="${it.sv || ''}" placeholder="Stock (vuoto = nessuno)">
         ${unitOpt('su', it.su, 'nessuno')}
-        <input data-rc="mw" type="number" step="any" value="${it.mw || ''}" placeholder="PM (g/mol)">
+        <label class="note" style="display:flex;gap:4px;align-items:center"><input type="checkbox" data-rc="pow" ${it.pow ? 'checked' : ''}> Polvere</label>
+        <input data-powonly data-rc="mw" type="number" step="any" value="${it.mw || ''}" placeholder="PM (g/mol)" ${it.pow ? '' : 'hidden'}>
       </div>
       <span class="note" data-rcout="${i}" style="flex:1 1 130px;font-weight:650;color:var(--fg)"></span>
       <button type="button" class="x trash" data-proto-act="rcdel" data-i="${i}" aria-label="Togli" title="Togli">✕</button>
@@ -891,7 +894,7 @@ function recipeEditorHTML(r, withSteps = true){
     ${rows || '<div class="empty">Nessun ingrediente ancora.</div>'}
     <div class="note" id="rcH2O" style="font-weight:650;color:var(--fg)"></div>
     <div><button type="button" class="btn" data-proto-act="rcadd">+ Ingrediente</button></div>
-    <div class="note">Cambia con il volume: quantità proporzionale al volume finale. Per campione: quantità × numero di campioni. Fisso: sempre la stessa quantità. Calcolo: scrivi il valore finale (es. 1 mM, 5 mg, 100 U) e, se c'è, lo stock (es. 10 mM, 2 U/µl). Senza stock il programma dice quanto pesare o quante unità servono; con il PM (g/mol) passa da moli a grammi. L'H2O è il resto per arrivare al volume.</div>
+    <div class="note">Cambia con il volume: quantità proporzionale al volume finale. Per campione: quantità × numero di campioni. Fisso: sempre la stessa quantità. Calcolo: scrivi il valore finale (es. 1 mM, 5 mg, 100 U) e, se c'è, lo stock (es. 10 mM, 2 U/µl). Senza stock il programma dice quanto pesare o quante unità servono. Per una polvere spunta Polvere e inserisci il PM (g/mol), che serve per passare da moli a grammi. L'H2O è il resto per arrivare al volume.</div>
     ${withSteps ? stepsEditor : ''}
   </fieldset>`;
 }
@@ -934,6 +937,8 @@ function refreshRecipeEdit(){
     const calc = row.querySelector('[data-rc="mode"]').value === 'calc';
     row.querySelectorAll('[data-calconly]').forEach(el => el.hidden = !calc);
     row.querySelectorAll('[data-simple]').forEach(el => el.hidden = calc);
+    const pw = row.querySelector('[data-rc="pow"]');
+    row.querySelectorAll('[data-powonly]').forEach(el => el.hidden = !(pw && pw.checked));
   });
   const items = readRecipeRows();
   const r = {base: {label: '', value: +$('rcBaseVal').value || 1, unit: $('rcBaseUnit').value.trim() || 'ml'},
