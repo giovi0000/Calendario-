@@ -192,6 +192,15 @@ body.picking .ov,body.picking .allday,body.picking .tl,body.picking .mcell,body.
 .exp .ed-label{display:block;font-size:12px;color:var(--muted)}
 body.hasimg .panel,body.hasimg #top{background:color-mix(in srgb,var(--panel) 88%,transparent)}
 
+/* elementi nascosti restano nascosti, anche con uno stile proprio */
+[hidden]{display:none !important}
+/* la pagina si adatta allo schermo: niente scorrimento laterale involontario */
+html,body{max-width:100%;overflow-x:hidden}
+img,video,iframe{max-width:100%;height:auto}
+input,select,textarea{max-width:100%}
+.wrap>*,.side>*,.calgrid>*,.left>*,.ed>*,.edbtns>*{min-width:0;max-width:100%}
+.modal{max-width:calc(100vw - 24px)}
+
 /* telefono */
 @media (max-width:700px){
   :root{--gut:34px}
@@ -1610,7 +1619,7 @@ function openEntry(kind, idx){
   let title, body;
   if (kind === 'text'){
     title = 'Testo: più passaggi';
-    body = `<div class="note">Incolla o scrivi il testo: ogni riga andata a capo diventa un passaggio separato.</div>
+    body = `<div class="note">Incolla o scrivi il testo. Ogni paragrafo separato da una riga vuota diventa un passaggio: le righe vicine restano nello stesso passaggio.</div>
       <textarea id="etText" rows="12" style="${area}"></textarea>${secSel('proc')}`;
   } else if (kind === 'step'){
     title = b ? 'Modifica passaggio' : 'Nuovo passaggio';
@@ -1658,7 +1667,8 @@ async function saveEntry(){
     r.own = true;
     r.pdf = $('etFmt') ? $('etFmt').value : 'list';
   } else if (kind === 'text'){
-    const lines = ($('etText').value || '').split('\n').map(s => s.trim()).filter(Boolean);
+    // un paragrafo (separato da una riga vuota) = un passaggio; le righe vicine si uniscono
+    const lines = ($('etText').value || '').split(/\n\s*\n/).map(par => par.split('\n').map(s => s.trim()).filter(Boolean).join(' ')).filter(Boolean);
     if (!lines.length){ flash('Scrivi almeno un passaggio.'); return; }
     const sec = $('etSec').value;
     const blocks = lines.map(t => ({type: 'text', text: t, sec}));
