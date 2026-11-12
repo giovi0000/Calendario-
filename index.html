@@ -529,9 +529,18 @@ function refreshImports(){
 // ---- ricetta: quantità calcolate dal volume da preparare e dai campioni ----
 // modalità degli ingredienti: 'vol' = proporzionale al volume base, 'sample' = per campione, 'fixed' = fisso
 function parseRecipe(s){ try { const r = JSON.parse(s || 'null'); return (r && typeof r === 'object') ? r : {}; } catch(_) { return {}; } }
+// unità del volume finale: i vecchi testi "ul" o "μl" diventano "µl"
+function normVolUnit(u){
+  const raw = String(u || '').trim();
+  const k = raw.replace('μ', 'µ').toLowerCase();
+  if (k === 'ul' || k === 'µl') return 'µl';
+  if (k === 'ml') return 'ml';
+  if (k === 'l') return 'l';
+  return raw;
+}
 function recipeDefaults(r){
   return {
-    base: {label: r.base?.label || 'Volume', value: +r.base?.value || 100, unit: r.base?.unit || 'ml'},
+    base: {label: r.base?.label || 'Volume', value: +r.base?.value || 100, unit: normVolUnit(r.base?.unit) || 'ml'},
     samples: !!r.samples,
     items: (r.own !== false && Array.isArray(r.items)) ? r.items.map(migrateItem) : [],
     own: r.own !== false,
@@ -889,7 +898,7 @@ function recipeEditorHTML(r, withSteps = true){
     <legend class="note">Ricetta</legend>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <label class="note">Volume finale <input id="rcBaseVal" type="number" step="any" value="${r.base.value}"></label>
-      <label class="note">Unità <select id="rcBaseUnit">${['µl','ml','l'].concat(VOL_F[r.base.unit] === undefined ? [r.base.unit] : []).map(u => `<option value="${esc(u)}" ${u === r.base.unit ? 'selected' : ''}>${esc(u)}</option>`).join('')}</select></label>
+      <label class="note">Unità <select id="rcBaseUnit">${['µl','ml','l'].concat(['µl','ml','l'].includes(r.base.unit) ? [] : [r.base.unit]).map(u => `<option value="${esc(u)}" ${u === r.base.unit ? 'selected' : ''}>${esc(u)}</option>`).join('')}</select></label>
     </div>
     <label class="note" style="display:flex;gap:6px;align-items:center">Si va a volume con
       <select id="rcFill">
@@ -918,7 +927,7 @@ function syncDraft(p){
       rows: +row.querySelector('[data-st-f="rows"]').value || 1
     }));
     p.recipe = JSON.stringify({
-      base: {label: 'Volume finale', value: +$('rcBaseVal').value || 1, unit: $('rcBaseUnit').value.trim() || 'ml'},
+      base: {label: 'Volume finale', value: +$('rcBaseVal').value || 1, unit: normVolUnit($('rcBaseUnit').value) || 'ml'},
       samples: $('rcSamples').checked,
       own: $('rcOwn') ? $('rcOwn').checked : true,
       fill: $('rcFill') ? $('rcFill').value : 'h2o',
@@ -948,7 +957,7 @@ function refreshRecipeEdit(){
     row.querySelectorAll('[data-powonly]').forEach(el => el.hidden = !(pw && pw.checked));
   });
   const items = readRecipeRows();
-  const r = {base: {label: '', value: +$('rcBaseVal').value || 1, unit: $('rcBaseUnit').value.trim() || 'ml'},
+  const r = {base: {label: '', value: +$('rcBaseVal').value || 1, unit: normVolUnit($('rcBaseUnit').value) || 'ml'},
              items, fill: $('rcFill') ? $('rcFill').value : 'h2o'};
   const out = calcItems(r, r.base.value, 1);
   items.forEach((_, i) => {
