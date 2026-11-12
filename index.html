@@ -258,6 +258,13 @@ input,select,textarea{max-width:100%}
       </div>
     </div>
   </div>
+  <div class="modalback" id="evNoteModal" hidden>
+    <div class="modal" style="max-width:480px;width:100%">
+      <div class="mhead"><h2 id="evNoteTitle">Note</h2><button type="button" class="btn" id="evNoteClose">Chiudi</button></div>
+      <div id="evNoteBody" style="padding:12px;white-space:pre-wrap;line-height:1.5"></div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;padding:12px"><button type="button" class="btn" id="evNoteEdit">Modifica</button></div>
+    </div>
+  </div>
   <div class="modalback" id="noteModal" hidden>
     <div class="modal" style="max-width:520px;width:100%">
       <div class="mhead"><h2 id="noteTitle">Note</h2><button type="button" class="btn" id="noteClose">Chiudi</button></div>
@@ -1540,6 +1547,16 @@ async function deleteGroup(){
   await loadCalendars(); render();
 }
 
+// ---- pop up con le note dell'evento nel calendario ----
+let evNoteId = null;
+function showEvNote(id){
+  const t = taskById(id); if (!t || !t.note) return;
+  evNoteId = id;
+  $('evNoteTitle').textContent = t.title;
+  $('evNoteBody').textContent = t.note;
+  $('evNoteModal').hidden = false;
+}
+function closeEvNote(){ $('evNoteModal').hidden = true; evNoteId = null; }
 // ---- note sulle attività da organizzare ----
 let noteId = null;
 function openNote(id){
@@ -2729,6 +2746,8 @@ root.addEventListener('click', e => {
   if (e.target.id === 'schedModal' || e.target.closest('#schCancel')){ closeSched(); return; }
   if (e.target.id === 'noteModal' || e.target.closest('#noteClose')){ closeNote(); return; }
   if (e.target.closest('#noteSave')){ saveNote(); return; }
+  if (e.target.id === 'evNoteModal' || e.target.closest('#evNoteClose')){ closeEvNote(); return; }
+  if (e.target.closest('#evNoteEdit')){ const id = evNoteId; closeEvNote(); if (id) openNote(id); return; }
   if (e.target.closest('#schSave')){ saveSched(); return; }
   if (e.target.closest('#back')){ goBack(); return; }
   if (e.target.closest('[data-cal-ren]')){ renameCalById(e.target.closest('[data-cal-ren]').dataset.calRen); return; }
@@ -2991,7 +3010,7 @@ root.addEventListener('click', e => {
     return;
   }
   const task = e.target.closest('[data-task]');
-  if (task) selectTask(task.dataset.task);
+  if (task){ selectTask(task.dataset.task); showEvNote(task.dataset.task); }
 });
 
 // swipe orizzontale su telefono: giorno precedente o successivo (non sulle attività né sulla tabella oraria)
