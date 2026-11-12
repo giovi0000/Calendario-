@@ -889,7 +889,7 @@ function recipeEditorHTML(r, withSteps = true){
     <legend class="note">Ricetta</legend>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <label class="note">Volume finale <input id="rcBaseVal" type="number" step="any" value="${r.base.value}"></label>
-      <label class="note">Unità <input id="rcBaseUnit" type="text" value="${esc(r.base.unit)}"></label>
+      <label class="note">Unità <select id="rcBaseUnit">${['µl','ml','l'].concat(VOL_F[r.base.unit] === undefined ? [r.base.unit] : []).map(u => `<option value="${esc(u)}" ${u === r.base.unit ? 'selected' : ''}>${esc(u)}</option>`).join('')}</select></label>
     </div>
     <label class="note" style="display:flex;gap:6px;align-items:center">Si va a volume con
       <select id="rcFill">
