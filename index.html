@@ -589,7 +589,7 @@ function autoUnit(x, fam){
 function migrateItem(it){
   if (!it || it.mode !== 'dil') return it;
   return {name: it.name, qty: it.qty, unit: it.unit, mode: 'calc',
-          tv: +it.cf || 0, tu: it.cfu || '', sv: +it.ci || 0, su: it.ciu || '', pow: false, mw: 0};
+          tv: +it.cf || 0, tu: it.cfu || '', sv: +it.ci || 0, su: it.ciu || '', pow: false, vary: false, mw: 0};
 }
 // legge le righe della ricetta dal form
 function readRecipeRows(){
@@ -597,7 +597,8 @@ function readRecipeRows(){
     const g = f => { const el = row.querySelector(`[data-rc="${f}"]`); return el ? el.value : ''; };
     return {name: g('name').trim(), mode: g('mode'), qty: +g('qty') || 0, unit: g('unit').trim(),
             tv: +g('tv') || 0, tu: g('tu'), sv: +g('sv') || 0, su: g('su'),
-            pow: !!(row.querySelector('[data-rc="pow"]') || {}).checked, mw: +g('mw') || 0};
+            pow: !!(row.querySelector('[data-rc="pow"]') || {}).checked,
+            vary: !!(row.querySelector('[data-rc="vary"]') || {}).checked, mw: +g('mw') || 0};
   });
 }
 // calcolo di una riga; VL = volume finale in litri
@@ -674,6 +675,32 @@ function calcItems(r, target, n){
     const a = autoUnit(o.L, 'L');
     return {name: o.name, value: a.value, unit: a.unit + (o.warn ? ' ⚠ più del volume' : ''), warn: !!o.warn, filler: !!o.filler};
   });
+}
+// modifiche fatte durante l'uso del protocollo: { indice riga: {tv, sv} }
+let useOv = {}, useOvFor = null;
+function currentOv(){
+  if (useOvFor !== protoOpen){ useOvFor = protoOpen; useOv = protoInst ? instVal('ov', {}) : {}; }
+  return useOv;
+}
+function applyOv(r, ov){
+  r.items = r.items.map((it, i) => ov[i] ? {...it, tv: ov[i].tv !== undefined ? ov[i].tv : it.tv, sv: ov[i].sv !== undefined ? ov[i].sv : it.sv} : it);
+  return r;
+}
+// casella per i valori modificabili: finale e stock di ogni riga spuntata
+function ovHTML(rc){
+  const rows = rc.items.map((it, i) => ({it, i})).filter(x => x.it.mode === 'calc' && x.it.vary);
+  if (!rows.length) return '';
+  const ov = currentOv();
+  return '<div class="note">Valori modificabili per questo uso:</div>' + rows.map(({it, i}) => {
+    const v = ov[i] || {};
+    const tv = v.tv !== undefined ? v.tv : it.tv;
+    const sv = v.sv !== undefined ? v.sv : it.sv;
+    return `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <span style="min-width:120px;font-weight:600">${esc(it.name)}</span>
+      <label class="note">Finale <input type="number" step="any" data-ov="${i}" data-ovf="tv" value="${tv || ''}" style="width:110px"> ${esc(it.tu || '')}</label>
+      ${it.su ? `<label class="note">Stock <input type="number" step="any" data-ov="${i}" data-ovf="sv" value="${sv || ''}" style="width:110px"> ${esc(it.su)}</label>` : ''}
+    </div>`;
+  }).join('');
 }
 const colsOf = st => (st.cols || '').split(',').map(s => s.trim()).filter(Boolean);
 // passaggi del protocollo; quelli con tabella diventano celle da compilare
@@ -877,6 +904,7 @@ function recipeEditorHTML(r, withSteps = true){
         ${unitOpt('tu', it.tu, 'unità finale')}
         <input data-rc="sv" type="number" step="any" value="${it.sv || ''}" placeholder="Stock (vuoto = nessuno)">
         ${unitOpt('su', it.su, 'nessuno')}
+        <label class="note" style="display:flex;gap:4px;align-items:center"><input type="checkbox" data-rc="vary" ${it.vary ? 'checked' : ''}> Modificabile all'uso</label>
         <label class="note" style="display:flex;gap:4px;align-items:center"><input type="checkbox" data-rc="pow" ${it.pow ? 'checked' : ''}> Polvere</label>
         <input data-powonly data-rc="mw" type="number" step="any" value="${it.mw || ''}" placeholder="PM (g/mol)" ${it.pow ? '' : 'hidden'}>
       </div>
@@ -971,7 +999,7 @@ function refreshRecipeEdit(){
 // quantità inserite nei passaggi tra graffe, es. {Tris}: si aggiornano con il volume scelto
 function refreshStepCalcs(){
   const p = protos.find(x => x.id === protoOpen); if (!p) return;
-  const r = recipeDefaults(parseRecipe(p.recipe));
+  const r = applyOv(recipeDefaults(parseRecipe(p.recipe)), currentOv());
   const target = $('rcTarget') ? (+$('rcTarget').value || r.base.value) : r.base.value;
   const n = r.samples ? (+($('rcN') && $('rcN').value) || 1) : 1;
   const all = calcItems(r, target, n);
@@ -984,7 +1012,7 @@ function refreshCalc(){
   refreshRecipeEdit();
   refreshStepCalcs();
   const p = protos.find(x => x.id === protoOpen); if (!p || !$('rcTarget')) return;
-  const r = recipeDefaults(parseRecipe(p.recipe));
+  const r = applyOv(recipeDefaults(parseRecipe(p.recipe)), currentOv());
   const target = +$('rcTarget').value || r.base.value;
   const n = r.samples ? (+($('rcN') && $('rcN').value) || 1) : 1;
   const rows = calcItems(r, target, n).filter(c => c.name);
@@ -1058,7 +1086,7 @@ function instVal(key, def){
 // salva volume e campioni solo per questo giorno (non cambia il protocollo)
 async function saveInst(){
   const t = taskById(protoInst); if (!t) return;
-  const inst = {target: +$('rcTarget').value || null, n: $('rcN') ? (+$('rcN').value || 1) : null};
+  const inst = {target: +$('rcTarget').value || null, n: $('rcN') ? (+$('rcN').value || 1) : null, ov: currentOv()};
   t.inst = JSON.stringify(inst);
   const {error} = await dbOp(curCal, 'tasks', 'update', {id: t.id, data: {inst: t.inst}});
   if (error){ if (!pinError(error)) flash('Non salvato: ' + error.message); }
@@ -1180,7 +1208,7 @@ function protoHTML(){
     </section>`;
   }
 
-  const rc = recipeDefaults(parseRecipe(p.recipe));
+  const rc = applyOv(recipeDefaults(parseRecipe(p.recipe)), currentOv());
   const allText = [p.body, ...getBlocks(rc).map(b => b.text || '')].join(' ');
   const ingNames = rc.items.map(it => it.name);
   const keys = [...new Set([...allText.matchAll(/\{([^{}]+)\}/g)].map(m => m[1].trim()))].filter(k => !ingNames.includes(k));
@@ -1189,7 +1217,7 @@ function protoHTML(){
     ${(rc.items.length || rc.imports.length) ? `<div style="display:flex;gap:10px;flex-wrap:wrap">
         <label class="note">${esc(rc.base.label)} (${esc(rc.base.unit)}) <input id="rcTarget" type="number" step="any" value="${instVal('target', rc.base.value)}" style="width:140px"></label>
         ${rc.samples ? `<label class="note">Campioni <input id="rcN" type="number" min="1" step="1" value="${instVal('n', 1)}" style="width:110px"></label>` : ''}
-      </div><div id="rcOut"></div>` : ''}
+      </div><div id="rcOut"></div>${ovHTML(rc)}` : ''}
     ${keys.length
       ? keys.map(k => `<label class="note">${esc(k)} <input data-ph="${esc(k)}" type="text" style="width:100%"></label>`).join('')
       : (p.kind === 'recipe' ? '' : '<div class="note">Nessun campo da compilare: il protocollo è pronto.</div>')}
@@ -2870,7 +2898,7 @@ root.addEventListener('click', e => {
     const p = protos.find(x => x.id === protoOpen); if (!p) return;
     const values = {};
     document.querySelectorAll('[data-ph]').forEach(i => { values[i.dataset.ph] = i.value.trim(); });
-    const rc = recipeDefaults(parseRecipe(p.recipe));
+    const rc = applyOv(recipeDefaults(parseRecipe(p.recipe)), currentOv());
     const target = +($('rcTarget') && $('rcTarget').value) || rc.base.value;
     const n = rc.samples ? (+($('rcN') && $('rcN').value) || 1) : 1;
     const rows = calcItems(rc, target, n).filter(c => c.name);
@@ -3044,6 +3072,14 @@ root.addEventListener('input', e => {
     const s = $('protoSearch');
     if (s){ s.focus(); s.setSelectionRange(s.value.length, s.value.length); }
     return;
+  }
+  if (e.target.dataset && e.target.dataset.ov !== undefined){
+    const i = +e.target.dataset.ov, f = e.target.dataset.ovf, ov = currentOv();
+    const v = e.target.value === '' ? undefined : +e.target.value;
+    ov[i] = {...(ov[i] || {}), [f]: v};
+    if (v === undefined) delete ov[i][f];
+    if (!Object.keys(ov[i]).length) delete ov[i];
+    refreshCalc(); return;
   }
   if (e.target.id === 'rcTarget' || e.target.id === 'rcN') refreshCalc();
   if (e.target.closest('[data-rc-row]') || e.target.id === 'rcBaseVal' || e.target.id === 'rcBaseUnit') refreshRecipeEdit();
