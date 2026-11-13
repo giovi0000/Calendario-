@@ -265,6 +265,19 @@ input,select,textarea{max-width:100%}
       <div style="display:flex;justify-content:flex-end;gap:8px;padding:12px"><button type="button" class="btn" id="evNoteEdit">Modifica</button></div>
     </div>
   </div>
+  <div class="modalback" id="catModal" hidden>
+    <div class="modal" style="max-width:420px;width:100%">
+      <div class="mhead"><h2 id="catModalTitle">Categoria</h2><button type="button" class="btn" id="catModalClose">Chiudi</button></div>
+      <div style="display:grid;gap:10px;padding:12px">
+        <label class="note" id="catModalSelWrap">Categoria <select id="catModalSel" style="width:100%"></select></label>
+        <input id="catModalNew" type="text" maxlength="60" placeholder="Nome della categoria" style="width:100%;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;color:var(--fg)">
+      </div>
+      <div style="display:flex;justify-content:space-between;gap:8px;padding:12px;flex-wrap:wrap">
+        <button type="button" class="btn" id="catModalDel" hidden>Elimina categoria vuota</button>
+        <button type="button" class="btn" id="catModalSave">Salva</button>
+      </div>
+    </div>
+  </div>
   <div class="modalback" id="noteModal" hidden>
     <div class="modal" style="max-width:520px;width:100%">
       <div class="mhead"><h2 id="noteTitle">Note</h2><button type="button" class="btn" id="noteClose">Chiudi</button></div>
@@ -478,7 +491,61 @@ let protoOpen = null;     // protocollo aperto (id)
 let protoMode = 'edit';   // 'edit' per modificare, 'fill' per compilare e stampare
 let protoCatFilter = '';   // categoria scelta nell'elenco dei protocolli
 let protoPickCatVal = '';  // categoria scelta nella tendina del calendario
-const allCats = () => [...new Set(protos.map(p => p.cat).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'it'));
+// le cartelle vuote restano salvate nel browser (per calendario); le altre vengono dai protocolli
+const storedCats = () => { try { return JSON.parse(localStorage.getItem('protoCats:' + curCal) || '[]'); } catch(_) { return []; } };
+const saveStoredCats = arr => localStorage.setItem('protoCats:' + curCal, JSON.stringify([...new Set(arr.filter(Boolean))]));
+const allCats = () => [...new Set([...protos.map(p => p.cat).filter(Boolean), ...storedCats()])].sort((a, b) => a.localeCompare(b, 'it'));
+let catClosed = new Set();    // cartelle richiuse nell'elenco
+let catModalFor = null;       // {mode:'move'|'rename'|'new', ref}
+async function setProtoCat(p, cat){
+  p.cat = cat || '';
+  const r = parseRecipe(p.recipe); r.cat = cat || undefined; p.recipe = JSON.stringify(r);
+  const {error} = await dbOp(curCal, 'protocols', 'update', {id: p.id, data: {recipe: p.recipe}});
+  if (error){ flash('Categoria non salvata, riprova.'); await loadProtocols(); render(); }
+}
+function openCatModal(mode, ref = ''){
+  catModalFor = {mode, ref};
+  const cats = allCats();
+  $('catModalTitle').textContent = mode === 'move' ? 'Sposta in categoria' : (mode === 'rename' ? 'Rinomina categoria' : 'Nuova categoria');
+  $('catModalSelWrap').hidden = mode !== 'move';
+  $('catModalSel').innerHTML = ['<option value="">Senza categoria</option>', ...cats.map(c => `<option value="${esc(c)}">${esc(c)}</option>`), '<option value="__new">+ Nuova categoria…</option>'].join('');
+  if (mode === 'move') $('catModalSel').value = (protos.find(x => x.id === ref) || {}).cat || '';
+  $('catModalNew').value = mode === 'rename' ? ref : '';
+  $('catModalNew').hidden = mode === 'move' && $('catModalSel').value !== '__new';
+  $('catModalDel').hidden = !(mode === 'rename' && !protos.some(p => p.cat === ref));
+  $('catModal').hidden = false;
+}
+function closeCatModal(){ $('catModal').hidden = true; catModalFor = null; }
+async function saveCatModal(){
+  const {mode, ref} = catModalFor || {};
+  let stored = storedCats();
+  if (mode === 'move'){
+    const p = protos.find(x => x.id === ref); if (!p) return closeCatModal();
+    const sel = $('catModalSel').value;
+    const name = sel === '__new' ? $('catModalNew').value.trim() : sel;
+    if (sel === '__new' && !name){ flash('Scrivi il nome della categoria.'); return; }
+    if (name){ stored.push(name); saveStoredCats(stored); }
+    closeCatModal(); render();
+    await setProtoCat(p, name);
+    return;
+  }
+  const name = $('catModalNew').value.trim();
+  if (!name){ flash('Scrivi il nome della categoria.'); return; }
+  if (mode === 'rename'){
+    stored = stored.filter(c => c !== ref); stored.push(name); saveStoredCats(stored);
+    const toMove = protos.filter(p => p.cat === ref);
+    closeCatModal(); render();
+    await Promise.all(toMove.map(p => setProtoCat(p, name)));
+    return;
+  }
+  stored.push(name); saveStoredCats(stored);
+  closeCatModal(); render();
+}
+function deleteCatModal(){
+  const {ref} = catModalFor || {};
+  saveStoredCats(storedCats().filter(c => c !== ref));
+  closeCatModal(); render();
+}
 const protoMatch = p => {
   if (protoCatFilter && (p.cat || '') !== protoCatFilter) return false;
   if (!protoQuery) return true;
@@ -1157,13 +1224,24 @@ function protoHTML(){
   const list = protos.filter(p => (p.kind === 'recipe') === (protoTab === 'recipes')
     && protoMatch(p)).sort((a,b) => (a.cat ? 0 : 1) - (b.cat ? 0 : 1) || (a.cat || '').localeCompare(b.cat || '', 'it') || a.createdAt - b.createdAt);
   if (!protoOpen){
-    let lastCat = null;
-    const catHead = p => { const c = p.cat || ''; if (c === lastCat) return ''; lastCat = c; return `<div class="note" style="margin-top:8px;font-weight:700">${esc(c || 'Senza categoria')}</div>`; };
-    const rows = list.map(p => `${catHead(p)}<div class="protorow">
+    const rowHTML = p => `<div class="protorow">
         <button type="button" class="ct" data-proto-act="use" data-id="${p.id}" style="background:none;border:0;padding:6px 2px;text-align:left;font-weight:600;color:var(--fg);cursor:pointer">${esc(p.title)}</button>
         <button type="button" class="btn sm" data-proto-act="use" data-id="${p.id}">Usa / PDF</button>
-        ${moreMenu(p.id, [{attr:'data-pm-edit', label:'Modifica'}, {attr:'data-pm-exp', label:'Esporta'}, {attr:'data-pm-share', label:'Condividi'}, {attr:'data-pm-del', label:'Elimina', danger:true}])}
-      </div>`).join('');
+        ${moreMenu(p.id, [{attr:'data-pm-edit', label:'Modifica'}, {attr:'data-pm-cat', label:'Sposta in categoria'}, {attr:'data-pm-exp', label:'Esporta'}, {attr:'data-pm-share', label:'Condividi'}, {attr:'data-pm-del', label:'Elimina', danger:true}])}
+      </div>`;
+    const tabProtos = protos.filter(p => (p.kind === 'recipe') === (protoTab === 'recipes'));
+    const grpCats = [...new Set([...tabProtos.map(p => p.cat).filter(Boolean), ...storedCats()])].sort((a, b) => a.localeCompare(b, 'it'));
+    if (list.some(p => !p.cat)) grpCats.push('');
+    const groups = grpCats.map(c => {
+      const items = list.filter(p => (p.cat || '') === c);
+      if (!items.length && protoQuery) return '';
+      const closed = catClosed.has(c) && !protoQuery;
+      return `<div style="margin-top:10px;display:flex;gap:6px;align-items:center">
+        <button type="button" class="btn sm" data-cat-toggle="${esc(c)}" style="flex:1;text-align:left;font-weight:700">${closed ? '▸' : '▾'} ${esc(c || 'Senza categoria')} <span class="note">(${items.length})</span></button>
+        ${c ? `<button type="button" class="btn sm" data-cat-edit="${esc(c)}" title="Rinomina o elimina" aria-label="Rinomina o elimina">✎</button>` : ''}
+      </div>${closed ? '' : items.map(rowHTML).join('')}`;
+    }).join('');
+    const rows = groups;
     return `<section class="panel" style="padding:12px">
       <div style="display:flex;gap:6px;margin-bottom:10px">
         <button type="button" class="btn ${protoTab === 'protocols' ? '' : ''}" data-ptab="protocols" aria-pressed="${protoTab === 'protocols'}">Protocolli</button>
@@ -1178,7 +1256,7 @@ function protoHTML(){
         <button type="button" class="btn" id="protoNew">${protoTab === 'recipes' ? '+ Ricetta' : '+ Protocollo'}</button>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
-        <select id="protoCatFilter" style="background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;color:var(--fg)">${['', ...allCats()].map(c => `<option value="${esc(c)}" ${c === protoCatFilter ? 'selected' : ''}>${c ? esc(c) : 'Tutte le categorie'}</option>`).join('')}</select>
+        <button type="button" class="btn" id="catNew">+ Categoria</button>
         <input id="protoSearch" type="search" placeholder="🔍 Cerca per titolo o categoria" value="${esc(protoQuery)}" style="flex:1;min-width:160px;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;color:var(--fg)">
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
@@ -2680,8 +2758,7 @@ function calShellHTML(){
           <div class="list" id="list" data-drop="list"></div>
           <div class="add">
             <select id="protoPickCat" class="full" aria-label="Categoria"></select>
-            <input id="protoPick" class="full" list="protoList" placeholder="Scrivi o scegli un protocollo" aria-label="Protocollo">
-            <datalist id="protoList"></datalist>
+            <select id="protoPick" class="full" aria-label="Protocollo"></select>
             <datalist id="protoCatList"></datalist>
             <button type="button" class="btn full" id="protoPickBtn">+ Aggiungi protocollo</button>
           </div>
@@ -2725,8 +2802,10 @@ function renderCalParts(){
   renderList();
   renderBookings();
   rebuild($('protoCatList'), allCats().map(c => `<option value="${esc(c)}">`).join(''));
-  rebuild($('protoPickCat'), ['', ...allCats()].map(c => `<option value="${esc(c)}" ${c === protoPickCatVal ? 'selected' : ''}>${c ? esc(c) : 'Tutte le categorie'}</option>`).join(''));
-  rebuild($('protoList'), protos.filter(p => p.kind !== 'recipe' && (!protoPickCatVal || (p.cat || '') === protoPickCatVal)).map(p => `<option value="${esc(p.title)}" label="${esc((p.cat ? p.cat + ' · ' : '') + p.title)}">`).join(''));
+  rebuild($('protoPickCat'), ['', '__none', ...allCats()].map(c => `<option value="${esc(c)}" ${c === protoPickCatVal ? 'selected' : ''}>${c === '' ? 'Tutte le categorie' : (c === '__none' ? 'Senza categoria' : esc(c))}</option>`).join(''));
+  const pickList = protos.filter(p => p.kind !== 'recipe' && (protoPickCatVal === '__none' ? !p.cat : (!protoPickCatVal || p.cat === protoPickCatVal)));
+  const pickGroups = [...new Set(pickList.map(p => p.cat || ''))].sort((a, b) => (a ? 0 : 1) - (b ? 0 : 1) || a.localeCompare(b, 'it'));
+  rebuild($('protoPick'), '<option value="">Scegli un protocollo…</option>' + pickGroups.map(c => `<optgroup label="${esc(c || 'Senza categoria')}">${pickList.filter(p => (p.cat || '') === c).map(p => `<option value="${esc(p.title)}">${esc(p.title)}</option>`).join('')}</optgroup>`).join(''));
   if (!bkDateManual && $('bkWeekday').value !== '' && document.activeElement !== $('bkDate')){
     $('bkDate').value = weekdayDate($('bkWeekday').value);
   }
@@ -2817,6 +2896,16 @@ root.addEventListener('click', e => {
   if (e.target.closest('#noteSave')){ saveNote(); return; }
   if (e.target.id === 'evNoteModal' || e.target.closest('#evNoteClose')){ closeEvNote(); return; }
   if (e.target.closest('#evNoteEdit')){ const id = evNoteId; closeEvNote(); if (id) openNote(id); return; }
+  if (e.target.id === 'catModal' || e.target.closest('#catModalClose')){ closeCatModal(); return; }
+  if (e.target.closest('#catModalSave')){ saveCatModal(); return; }
+  if (e.target.closest('#catModalDel')){ deleteCatModal(); return; }
+  if (e.target.closest('#catNew')){ openCatModal('new'); return; }
+  const catTog = e.target.closest('[data-cat-toggle]');
+  if (catTog){ const c = catTog.dataset.catToggle; if (catClosed.has(c)) catClosed.delete(c); else catClosed.add(c); render(); return; }
+  const catEd = e.target.closest('[data-cat-edit]');
+  if (catEd){ openCatModal('rename', catEd.dataset.catEdit); return; }
+  const pmCat = e.target.closest('[data-pm-cat]');
+  if (pmCat){ openCatModal('move', pmCat.dataset.pmCat); return; }
   if (e.target.closest('#schSave')){ saveSched(); return; }
   if (e.target.closest('#back')){ goBack(); return; }
   if (e.target.closest('[data-cal-ren]')){ renameCalById(e.target.closest('[data-cal-ren]').dataset.calRen); return; }
@@ -3130,6 +3219,7 @@ root.addEventListener('change', e => {
   const t0 = e.target;
   if (t0.id === 'protoCatFilter'){ protoCatFilter = t0.value; render(); return; }
   if (t0.id === 'protoPickCat'){ protoPickCatVal = t0.value; render(); return; }
+  if (t0.id === 'catModalSel'){ $('catModalNew').hidden = t0.value !== '__new'; return; }
   if (t0.id === 'rcOwn'){ $('rcWrap').hidden = !t0.checked; return; }
   if (t0.id === 'protoFile'){ importProtos(t0.files[0]); t0.value = ''; return; }
   if (t0.closest && (t0.closest('[data-rc-row]') || t0.id === 'rcFill' || t0.id === 'rcBaseVal' || t0.id === 'rcBaseUnit')) refreshRecipeEdit();
