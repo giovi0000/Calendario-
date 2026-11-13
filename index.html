@@ -476,7 +476,15 @@ let statusTimer = null;
 let protos = [];          // {id, groupId, title, body, createdAt}
 let protoOpen = null;     // protocollo aperto (id)
 let protoMode = 'edit';   // 'edit' per modificare, 'fill' per compilare e stampare
-const protoFromDb = r => ({id:r.id, groupId:r.group_id, kind:r.kind||'protocol', title:r.title, body:r.body||'', recipe:r.recipe||'', createdAt:r.created_at||0});
+let protoCatFilter = '';   // categoria scelta nell'elenco dei protocolli
+let protoPickCatVal = '';  // categoria scelta nella tendina del calendario
+const allCats = () => [...new Set(protos.map(p => p.cat).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'it'));
+const protoMatch = p => {
+  if (protoCatFilter && (p.cat || '') !== protoCatFilter) return false;
+  if (!protoQuery) return true;
+  return (p.title + ' ' + (p.cat || '')).toLowerCase().includes(protoQuery.toLowerCase());
+};
+const protoFromDb = r => ({id:r.id, groupId:r.group_id, kind:r.kind||'protocol', title:r.title, body:r.body||'', recipe:r.recipe||'', cat:parseRecipe(r.recipe).cat||'', createdAt:r.created_at||0});
 let protoTab = 'protocols';   // scheda attiva: 'protocols' oppure 'recipes'
 let protoQuery = '';          // testo della ricerca nei protocolli
 const RECIPE_DEFAULT = () => JSON.stringify({base:{label:'Volume finale', value:1000, unit:'ml'}, items:[], steps:[], imports:[]});
@@ -541,6 +549,7 @@ function normVolUnit(u){
 function recipeDefaults(r){
   return {
     base: {label: r.base?.label || 'Volume', value: +r.base?.value || 100, unit: normVolUnit(r.base?.unit) || 'ml'},
+    cat: r.cat || '',
     samples: !!r.samples,
     items: (r.own !== false && Array.isArray(r.items)) ? r.items.map(migrateItem) : [],
     own: r.own !== false,
@@ -955,6 +964,7 @@ function syncDraft(p){
       rows: +row.querySelector('[data-st-f="rows"]').value || 1
     }));
     p.recipe = JSON.stringify({
+      cat: parseRecipe(p.recipe).cat || '',
       base: {label: 'Volume finale', value: +$('rcBaseVal').value || 1, unit: normVolUnit($('rcBaseUnit').value) || 'ml'},
       samples: $('rcSamples').checked,
       own: $('rcOwn') ? $('rcOwn').checked : true,
@@ -1024,7 +1034,7 @@ let protoFrom = 'lab';   // dove tornare quando si chiudono i protocolli: 'lab' 
 // esporta i protocolli (o le ricette) visibili, insieme alle ricette che usano
 function exportProtos(){
   const list = protos.filter(p => (p.kind === 'recipe') === (protoTab === 'recipes')
-    && (!protoQuery || p.title.toLowerCase().includes(protoQuery.toLowerCase())));
+    && protoMatch(p));
   if (!list.length){ flash('Niente da esportare.'); return; }
   const ids = new Set(list.map(p => p.id));
   list.forEach(p => getBlocks(recipeDefaults(parseRecipe(p.recipe)))
@@ -1097,7 +1107,7 @@ async function protoNew(){
   if (!title){ flash('Scrivi il titolo del protocollo.'); return; }
   const isRecipe = protoTab === 'recipes';
   const row = {id: crypto.randomUUID(), group_id: null, calendar_id: curCal, kind: isRecipe ? 'recipe' : 'protocol',
-               title, body: '', recipe: isRecipe ? RECIPE_DEFAULT() : '', created_at: Date.now()};
+               title, body: '', recipe: JSON.stringify({...parseRecipe(isRecipe ? RECIPE_DEFAULT() : ''), cat: ($('protoCatNew') ? $('protoCatNew').value.trim() : '') || undefined}), created_at: Date.now()};
   protos.push(protoFromDb(row));
   protoOpen = row.id; protoMode = 'edit'; render();
   const {error} = await dbOp(curCal, 'protocols', 'insert', {data: row});
@@ -1110,6 +1120,9 @@ async function protoSave(){
   syncDraft(p);
   const rr = recipeDefaults(parseRecipe(p.recipe));
   rr.items = rr.items.filter(i => i.name);
+  const catEd = $('protoCatEd');
+  rr.cat = catEd ? catEd.value.trim() : rr.cat;
+  p.cat = rr.cat || '';
   p.recipe = JSON.stringify(rr);
   const {error} = await dbOp(curCal, 'protocols', 'update', {id: p.id, data: {title: p.title, body: p.body, recipe: p.recipe}});
   if (error){ flash('Protocollo non salvato, riprova.'); await loadProtocols(); }
@@ -1142,9 +1155,11 @@ function printProtocol(title, body, values, extra = ''){
 }
 function protoHTML(){
   const list = protos.filter(p => (p.kind === 'recipe') === (protoTab === 'recipes')
-    && (!protoQuery || p.title.toLowerCase().includes(protoQuery.toLowerCase()))).sort((a,b) => a.createdAt - b.createdAt);
+    && protoMatch(p)).sort((a,b) => (a.cat ? 0 : 1) - (b.cat ? 0 : 1) || (a.cat || '').localeCompare(b.cat || '', 'it') || a.createdAt - b.createdAt);
   if (!protoOpen){
-    const rows = list.map(p => `<div class="protorow">
+    let lastCat = null;
+    const catHead = p => { const c = p.cat || ''; if (c === lastCat) return ''; lastCat = c; return `<div class="note" style="margin-top:8px;font-weight:700">${esc(c || 'Senza categoria')}</div>`; };
+    const rows = list.map(p => `${catHead(p)}<div class="protorow">
         <button type="button" class="ct" data-proto-act="use" data-id="${p.id}" style="background:none;border:0;padding:6px 2px;text-align:left;font-weight:600;color:var(--fg);cursor:pointer">${esc(p.title)}</button>
         <button type="button" class="btn sm" data-proto-act="use" data-id="${p.id}">Usa / PDF</button>
         ${moreMenu(p.id, [{attr:'data-pm-edit', label:'Modifica'}, {attr:'data-pm-exp', label:'Esporta'}, {attr:'data-pm-share', label:'Condividi'}, {attr:'data-pm-del', label:'Elimina', danger:true}])}
@@ -1159,10 +1174,12 @@ function protoHTML(){
         : 'Nei passaggi scrivi tra graffe un ingrediente per avere la quantità, per esempio {Tris}, oppure un campo da compilare, per esempio {data}.'}</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
         <input id="protoTitle" type="text" placeholder="Titolo del nuovo protocollo" maxlength="120" style="flex:1;min-width:160px;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:6px 8px;color:var(--fg)">
+        <input id="protoCatNew" type="text" list="protoCatList" placeholder="Categoria (facoltativa)" maxlength="60" style="flex:1;min-width:140px;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:6px 8px;color:var(--fg)">
         <button type="button" class="btn" id="protoNew">${protoTab === 'recipes' ? '+ Ricetta' : '+ Protocollo'}</button>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
-        <input id="protoSearch" type="search" placeholder="🔍 Cerca per titolo" value="${esc(protoQuery)}" style="flex:1;min-width:160px;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;color:var(--fg)">
+        <select id="protoCatFilter" style="background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;color:var(--fg)">${['', ...allCats()].map(c => `<option value="${esc(c)}" ${c === protoCatFilter ? 'selected' : ''}>${c ? esc(c) : 'Tutte le categorie'}</option>`).join('')}</select>
+        <input id="protoSearch" type="search" placeholder="🔍 Cerca per titolo o categoria" value="${esc(protoQuery)}" style="flex:1;min-width:160px;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;color:var(--fg)">
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
         <button type="button" class="btn" id="protoExport">⬇ Esporta</button>
@@ -1176,6 +1193,7 @@ function protoHTML(){
   if (protoMode === 'edit' && p.kind === 'recipe'){
     return `<section class="panel" style="padding:12px;display:grid;gap:8px">
       <label class="note">Nome della ricetta <input id="protoTitleEd" type="text" value="${esc(p.title)}" maxlength="120" style="width:100%"></label>
+      <label class="note">Categoria <input id="protoCatEd" type="text" list="protoCatList" value="${esc(p.cat || '')}" maxlength="60" style="width:100%"></label>
       ${recipeEditorHTML(recipeDefaults(parseRecipe(p.recipe)), false)}
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button type="button" class="btn" id="protoSave">Salva</button>
@@ -1188,6 +1206,7 @@ function protoHTML(){
     return `<section class="panel" style="padding:12px;display:grid;gap:10px">
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <input id="protoTitleEd" type="text" value="${esc(p.title)}" maxlength="120" style="flex:1;min-width:160px;font-size:16px;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;color:var(--fg)">
+        <input id="protoCatEd" type="text" list="protoCatList" value="${esc(p.cat || '')}" placeholder="Categoria" maxlength="60" style="flex:0 1 180px;min-width:120px;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;color:var(--fg)">
         <div style="position:relative">
           <button type="button" class="btn" id="protoPlus" aria-label="Aggiungi" title="Aggiungi" style="font-size:22px;min-width:48px;min-height:48px">+</button>
           <div id="plusMenu" hidden style="position:absolute;right:0;top:100%;margin-top:6px;display:grid;background:var(--panel);border:1px solid var(--line);border-radius:10px;min-width:220px;z-index:30;box-shadow:0 6px 18px rgba(0,0,0,.15);overflow:hidden">
@@ -2660,8 +2679,10 @@ function calShellHTML(){
           </div>
           <div class="list" id="list" data-drop="list"></div>
           <div class="add">
+            <select id="protoPickCat" class="full" aria-label="Categoria"></select>
             <input id="protoPick" class="full" list="protoList" placeholder="Scrivi o scegli un protocollo" aria-label="Protocollo">
             <datalist id="protoList"></datalist>
+            <datalist id="protoCatList"></datalist>
             <button type="button" class="btn full" id="protoPickBtn">+ Aggiungi protocollo</button>
           </div>
         </aside>
@@ -2703,7 +2724,9 @@ function renderCalParts(){
   $('cal').innerHTML = weekView === 'week' ? renderWeek() : renderMonth();
   renderList();
   renderBookings();
-  rebuild($('protoList'), protos.filter(p => p.kind !== 'recipe').map(p => `<option value="${esc(p.title)}">`).join(''));
+  rebuild($('protoCatList'), allCats().map(c => `<option value="${esc(c)}">`).join(''));
+  rebuild($('protoPickCat'), ['', ...allCats()].map(c => `<option value="${esc(c)}" ${c === protoPickCatVal ? 'selected' : ''}>${c ? esc(c) : 'Tutte le categorie'}</option>`).join(''));
+  rebuild($('protoList'), protos.filter(p => p.kind !== 'recipe' && (!protoPickCatVal || (p.cat || '') === protoPickCatVal)).map(p => `<option value="${esc(p.title)}" label="${esc((p.cat ? p.cat + ' · ' : '') + p.title)}">`).join(''));
   if (!bkDateManual && $('bkWeekday').value !== '' && document.activeElement !== $('bkDate')){
     $('bkDate').value = weekdayDate($('bkWeekday').value);
   }
@@ -3105,6 +3128,8 @@ root.addEventListener('keydown', e => {
 
 root.addEventListener('change', e => {
   const t0 = e.target;
+  if (t0.id === 'protoCatFilter'){ protoCatFilter = t0.value; render(); return; }
+  if (t0.id === 'protoPickCat'){ protoPickCatVal = t0.value; render(); return; }
   if (t0.id === 'rcOwn'){ $('rcWrap').hidden = !t0.checked; return; }
   if (t0.id === 'protoFile'){ importProtos(t0.files[0]); t0.value = ''; return; }
   if (t0.closest && (t0.closest('[data-rc-row]') || t0.id === 'rcFill' || t0.id === 'rcBaseVal' || t0.id === 'rcBaseUnit')) refreshRecipeEdit();
