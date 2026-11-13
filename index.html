@@ -2104,9 +2104,15 @@ async function saveChange(id, patch){
   } else if (oldDay){
     // protocollo spostato: le prenotazioni si spostano della stessa distanza
     const delta = Math.round((new Date(patch.day + 'T00:00') - new Date(oldDay + 'T00:00')) / 86400000);
-    linked.forEach(r => { r.day = fmt(addDays(new Date(r.day + 'T00:00'), delta)); });
+    const newDate = longDay(patch.day);
+    linked.forEach(r => {
+      r.day = fmt(addDays(new Date(r.day + 'T00:00'), delta));
+      // il titolo riporta il giorno del protocollo: "Prenotare: X per <giorno>"
+      const i = r.title.lastIndexOf(' per ');
+      if (i > 0) r.title = r.title.slice(0, i) + ' per ' + newDate;
+    });
     render();
-    await Promise.all(linked.map(r => dbOp(curCal, 'tasks', 'update', {id: r.id, data: {day: r.day}})));
+    await Promise.all(linked.map(r => dbOp(curCal, 'tasks', 'update', {id: r.id, data: {day: r.day, title: r.title}})));
   }
 }
 async function addTask(title, category){
