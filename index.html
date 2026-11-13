@@ -1938,7 +1938,7 @@ async function savePlaceProto(){
   const rows = [{id: crypto.randomUUID(), title: p.title, day, slot: encRange(f, to), done: false,
                  category: null, kind: null, created_at: now, calendar_id: curCal}];
   rc.tools.filter(tl => tl.name).forEach((tl, k) => rows.push({
-    id: crypto.randomUUID(), title: 'Prenotare: ' + tl.name,
+    id: crypto.randomUUID(), title: `Prenotare: ${tl.name} per ${longDay(day)}`,
     day: tl.lead !== undefined ? fmt(addDays(new Date(day + 'T00:00'), -(+tl.lead || 0))) : (tl.day || day),
     slot: null, done: false,
     category: null, kind: 'booking', created_at: now + k + 1, calendar_id: curCal
@@ -2154,7 +2154,7 @@ async function addToolReminders(protoId, day, taskId){
   const rc = recipeDefaults(parseRecipe(p.recipe));
   const now = Date.now();
   const rows = rc.tools.filter(tl => tl.name).map((tl, k) => ({
-    id: crypto.randomUUID(), title: 'Prenotare: ' + tl.name,
+    id: crypto.randomUUID(), title: `Prenotare: ${tl.name} per ${longDay(day)}`,
     day: fmt(addDays(new Date(day + 'T00:00'), -(+tl.lead || 0))),
     slot: null, done: false, category: null, kind: 'booking', created_at: now + k + 1, calendar_id: curCal
   }));
@@ -2505,6 +2505,9 @@ function renderList(){
     h += none.map(t => chip(t,'del')).join('');
   }
   $('list').innerHTML = h || `<div class="empty">Nessuna attività da organizzare. Scrivine una sopra e trascinala sul calendario.</div>`;
+}
+function longDay(day){
+  return new Date(day + 'T00:00').toLocaleDateString('it-IT', {weekday:'long', day:'numeric', month:'long'});
 }
 function dayLabel(day){
   if (!day) return 'senza data';
