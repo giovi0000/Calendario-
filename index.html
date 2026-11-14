@@ -2273,7 +2273,7 @@ const TH_DEF = {
 };
 // stili selezionabili: cambiano i colori chiari e le decorazioni (la modalità scura resta com'è)
 const STYLES = {
-  rosa:    {name:'Rosa festone', light: {...TH_DEF.light}},
+  rosa:    {name:'Rosa festone', light: {bg:'#fff4f8', panel:'#fffdfb', fg:'#5a2a40', accent:'#d9557f', muted:'#9a7a8a', day:'#fbdbe7', allday:'#fdeef4', am:'#fffdfb', pm:'#fbf3f7', item:'#f6b8cf', bk:'#e4f0df', line:'#f3d3e1'}},
   glitte:  {name:'Glitte (pastello y2k)', light: {bg:'#fff3f7', panel:'#fffdfe', fg:'#4b3c48', accent:'#e77fa6', muted:'#8a7a85', day:'#dde874', allday:'#c9f0f7', am:'#fffdfe', pm:'#f7fbe6', item:'#ffb6c1', bk:'#b0e0e6', line:'#f7c6d6'}},
   luna:    {name:'Luna (viola e menta)', light: {bg:'#f4f0e6', panel:'#fffcf4', fg:'#2e2f7a', accent:'#5b5fd6', muted:'#7a7fa6', day:'#dcd9f7', allday:'#e9e6fb', am:'#fffcf4', pm:'#f3f0e6', item:'#c9f2d6', bk:'#dcd9f7', line:'#d6d2ee'}},
   brutal:  {name:'Brutal (contorni neri e collage)', light: {bg:'#f4f1ea', panel:'#ffffff', fg:'#111111', accent:'#ff5c8a', muted:'#4a4a4a', day:'#c5f04a', allday:'#ffe066', am:'#ffffff', pm:'#f7f5ee', item:'#ffe066', bk:'#8c6bff', line:'#111111'}},
@@ -2289,17 +2289,19 @@ const isDarkMode = () => window.matchMedia('(prefers-color-scheme: dark)').match
 function themeSaved(){ try { return JSON.parse(localStorage.getItem('theme') || '{}'); } catch(_) { return {}; } }
 function themeFor(mode){
   const st = localStorage.getItem('style');
-  const base = (mode === 'light' && STYLES[st] && STYLES[st].light) ? STYLES[st].light : TH_DEF[mode];
+  const base = (mode === 'light' && STYLES[st] && STYLES[st].light) ? STYLES[st].light : (mode === 'light' ? STYLES[DEFAULT_STYLE].light : TH_DEF[mode]);
   return {...base, ...(themeSaved()[mode] || {})};
 }
+const DEFAULT_STYLE = 'azzurro';
+const currentStyle = () => STYLES[localStorage.getItem('style')] ? localStorage.getItem('style') : DEFAULT_STYLE;
 function applyTheme(){
-  document.documentElement.dataset.style = STYLES[localStorage.getItem('style')] ? localStorage.getItem('style') : 'rosa';
+  document.documentElement.dataset.style = currentStyle();
   const t = themeFor(isDarkMode() ? 'dark' : 'light');
   const st = document.documentElement.style;
   TH_KEYS.forEach(k => st.setProperty(TH_VAR[k], t[k]));
 }
 function applyStyle(id){
-  if (!STYLES[id]) id = 'rosa';
+  if (!STYLES[id]) id = DEFAULT_STYLE;
   const all = themeSaved();
   const cur = localStorage.getItem('style');
   if (cur === 'custom' && id !== 'custom') all.customLight = {...themeFor('light')};
@@ -2314,7 +2316,7 @@ function fillTheme(){
   const sel = $('styleSel');
   if (sel){
     if (!sel.options.length) sel.innerHTML = Object.entries(STYLES).map(([k, v]) => `<option value="${k}">${v.name}</option>`).join('');
-    sel.value = document.documentElement.dataset.style || 'rosa';
+    sel.value = currentStyle();
   }
   ['light','dark'].forEach(mode => {
     const k = mode === 'light' ? 'L' : 'D';
@@ -2328,7 +2330,7 @@ function saveTheme(id){
   const all = themeSaved();
   all[mode] = {...(all[mode] || {}), [m[2]]: $(id).value};
   if (mode === 'light'){
-    all.customLight = {...TH_DEF.light, ...(all.light || {})};
+    all.customLight = {...STYLES[DEFAULT_STYLE].light, ...(all.light || {})};
     localStorage.setItem('style', 'custom');
   }
   localStorage.setItem('theme', JSON.stringify(all));
@@ -3170,7 +3172,7 @@ root.addEventListener('click', e => {
   if (sw){ setBg({type:'color', value: sw.dataset.bgColor}); return; }
   if (e.target.closest('#bgImg')){ setBgImage(); return; }
   if (e.target.closest('#bgReset')){ setBg(null); return; }
-  if (e.target.closest('#thReset')){ localStorage.removeItem('theme'); localStorage.setItem('style', 'rosa'); applyTheme(); fillTheme(); flash('Colori ripristinati.'); return; }
+  if (e.target.closest('#thReset')){ localStorage.removeItem('theme'); localStorage.setItem('style', DEFAULT_STYLE); applyTheme(); fillTheme(); flash('Colori ripristinati.'); return; }
   if (e.target.closest('#asAdmin')){ asAdmin(); return; }
   if (e.target.closest('#setAdminSave')){ saveAdminPin(); return; }
   if (e.target.closest('#linkMake')){ makeLink(); return; }
