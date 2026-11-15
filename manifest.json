@@ -1,0 +1,21 @@
+{
+  "name": "Calendario condiviso",
+  "short_name": "Calendario",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#5a9bc2",
+  "icons": [
+    {
+      "src": "icona-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icona-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
