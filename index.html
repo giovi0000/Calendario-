@@ -3097,6 +3097,7 @@ function applyDrop(zone, clientY, id){
 // ---- interazione ----
 const root = document.querySelector('.wrap');
 root.addEventListener('click', e => {
+  if (Date.now() - tdEndedAt < 500) return;
   // chiude i menu ⋯ quando si tocca altrove
   if (!e.target.closest('.more')) document.querySelectorAll('.menu').forEach(m => { m.hidden = true; });
   const po = e.target.closest('[data-proto-open]');
@@ -3525,6 +3526,58 @@ root.addEventListener('drop', e => {
   if (id.startsWith('bk:')){ dropBooking(zone, e.clientY, id.slice(3)); return; }
   applyDrop(zone, e.clientY, id);
 });
+
+// ---- trascinamento al tocco (telefono): tieni premuto un attimo e sposta ----
+let tdPend = null, tdTimer = null, tdDrag = null, tdEndedAt = 0;
+function tdClear(){
+  clearTimeout(tdTimer); tdPend = null;
+  if (tdDrag){
+    tdDrag.el.classList.remove('dragging');
+    tdDrag.ghost.remove();
+    tdDrag = null;
+  }
+  document.querySelectorAll('.over').forEach(n => n.classList.remove('over'));
+}
+root.addEventListener('pointerdown', e => {
+  if (e.pointerType !== 'touch') return;
+  const el = e.target.closest('[data-task],[data-bk]');
+  if (!el) return;
+  tdPend = {x: e.clientX, y: e.clientY, el};
+  tdTimer = setTimeout(() => {
+    if (!tdPend) return;
+    const r = tdPend.el.getBoundingClientRect();
+    const ghost = tdPend.el.cloneNode(true);
+    ghost.style.cssText = `position:fixed;pointer-events:none;opacity:.85;z-index:999;margin:0;width:${r.width}px;left:${tdPend.x}px;top:${tdPend.y}px;transform:translate(-50%,-50%)`;
+    document.body.appendChild(ghost);
+    tdDrag = {el: tdPend.el, ghost, id: tdPend.el.dataset.task || ('bk:' + tdPend.el.dataset.bk)};
+    tdPend.el.classList.add('dragging');
+    if (navigator.vibrate) navigator.vibrate(15);
+  }, 350);
+}, {passive: true});
+document.addEventListener('pointermove', e => {
+  if (e.pointerType !== 'touch') return;
+  // se il dito si muove prima del tempo è uno scorrimento: niente trascinamento
+  if (tdPend && !tdDrag && Math.hypot(e.clientX - tdPend.x, e.clientY - tdPend.y) > 10){ clearTimeout(tdTimer); tdPend = null; return; }
+  if (!tdDrag) return;
+  tdDrag.ghost.style.left = e.clientX + 'px';
+  tdDrag.ghost.style.top = e.clientY + 'px';
+  document.querySelectorAll('.over').forEach(n => n.classList.remove('over'));
+  const zone = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-drop]');
+  if (zone) zone.classList.add('over');
+});
+// durante il trascinamento la pagina non scorre
+document.addEventListener('touchmove', e => { if (tdDrag) e.preventDefault(); }, {passive: false});
+document.addEventListener('pointerup', e => {
+  if (e.pointerType !== 'touch') return;
+  if (!tdDrag){ tdClear(); return; }
+  const drag = tdDrag;
+  const zone = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-drop]');
+  tdClear(); tdEndedAt = Date.now();
+  if (!zone) return;
+  if (drag.id.startsWith('bk:')) dropBooking(zone, e.clientY, drag.id.slice(3));
+  else applyDrop(zone, e.clientY, drag.id);
+});
+document.addEventListener('pointercancel', e => { if (e.pointerType === 'touch') tdClear(); });
 
 // ---- avvio ----
 async function init(){
