@@ -1088,7 +1088,7 @@ function blocksFillHTML(rc){
       if (b.type === 'recipe'){
         const rec = protos.find(x => x.id === b.id); if (!rec) return '';
         const rr = recipeDefaults(parseRecipe(rec.recipe));
-        const nC = rr.samples ? (useN || 1) : 1;
+        const nC = rr.samples ? (useNs[rec.id] || 1) : 1;
         const volF = rr.fixedVol ? rr.base.value : b.vol;
         const volHTML = rr.fixedVol ? '' : ` · volume <input data-impf="${i}" type="number" step="any" value="${b.vol}" style="width:110px"> ${esc(rr.base.unit)}`;
         return `<div><div><b>${esc(rec.title)}</b>${rr.samples ? ` · campioni: ${nC}` : ''}${volHTML}</div>
@@ -1132,7 +1132,7 @@ function blocksPrint(rc){
         const rec = protos.find(x => x.id === b.id); if (!rec) return '';
         const rr = recipeDefaults(parseRecipe(rec.recipe));
         const inp = document.querySelector(`[data-impf="${i}"]`);
-        const nC = rr.samples ? (useN || 1) : 1;
+        const nC = rr.samples ? (useNs[rec.id] || 1) : 1;
         const vol = rr.fixedVol ? rr.base.value : (inp ? (+inp.value || 0) : b.vol);
         const rowsR = calcItems(rr, vol, nC).filter(c => c.name);
         return (b.fmt === 'line' ? lineRecipeHTML : compactRecipeHTML)(rec.title + (rr.samples ? ` · campioni: ${nC}` : ''), rr.base.unit, vol, rowsR);
@@ -1284,7 +1284,7 @@ function refreshStepCalcs(){
   const p = protos.find(x => x.id === protoOpen); if (!p) return;
   const r = applyOv(recipeDefaults(parseRecipe(p.recipe)), currentOv());
   const target = (!r.fixedVol && $('rcTarget')) ? (+$('rcTarget').value || r.base.value) : r.base.value;
-  const n = r.samples ? (+($('rcN') && $('rcN').value) || 1) : 1;
+  const n = r.samples ? (useNs.self || 1) : 1;
   const all = calcItems(r, target, n);
   document.querySelectorAll('[data-calc]').forEach(el => {
     const c = all.find(x => x.name === el.dataset.calc);
@@ -1308,7 +1308,7 @@ function refreshCalc(){
   const p = protos.find(x => x.id === protoOpen); if (!p || !$('rcTarget')) return;
   const r = applyOv(recipeDefaults(parseRecipe(p.recipe)), currentOv());
   const target = r.fixedVol ? r.base.value : (+($('rcTarget') && $('rcTarget').value) || r.base.value);
-  const n = r.samples ? (+($('rcN') && $('rcN').value) || 1) : 1;
+  const n = r.samples ? (useNs.self || 1) : 1;
   const rows = calcItems(r, target, n).filter(c => c.name);
   $('rcOut').innerHTML = (rows.length ? `<table style="border-collapse:collapse;width:100%">${rows.map(c =>
     `<tr><td style="border-bottom:1px solid var(--line);padding:5px 6px">${esc(c.name)}</td><td style="border-bottom:1px solid var(--line);padding:5px 6px;text-align:right;font-weight:650">${fmtNum(c.value)} ${esc(c.unit)}</td></tr>`).join('')}</table>` : '') + mmHTML(r, target, n);
@@ -1363,18 +1363,19 @@ async function importProtos(file){
 function openProto(){ protoFrom = view; view = 'proto'; protoOpen = null; render(); }
 // protocollo aperto dal calendario: volume e campioni sono quelli di quel giorno
 let protoInst = null;   // id dell'attività del calendario
-let useN = null;   // campioni scelti all'apertura dell'uso
-let useChildN = {}; // campioni dei calcoli con nome, per id
+let useNs = {};    // campioni per ogni calcolo: 'self' = il protocollo, altrimenti l'id del calcolo con nome
 function samplesBarHTML(p, rc){
-  const kids = getBlocks(rc).filter(b => b.type === 'recipe').map(b => protos.find(x => x.id === b.id)).filter(Boolean);
-  const need = rc.samples || kids.some(k => recipeDefaults(parseRecipe(k.recipe)).samples);
-  if (!need) return '';
-  return `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-    <label class="note">Numero di campioni <input id="rcN" type="number" min="1" step="1" value="${useN || 1}" style="width:110px"></label>
-    <button type="button" class="btn" id="calcSamples">Calcola</button>
-  </div>`;
+  const kids = getBlocks(rc).filter(b => b.type === 'recipe').map(b => protos.find(x => x.id === b.id)).filter(Boolean)
+    .filter(k => recipeDefaults(parseRecipe(k.recipe)).samples);
+  const items = [...(rc.samples ? [{id: 'self', name: p.title}] : []), ...kids.map(k => ({id: k.id, name: k.title}))];
+  if (!items.length) return '';
+  return `<div style="display:grid;gap:6px">${items.map(it => `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <span style="min-width:140px">${esc(it.name)}</span>
+      <label class="note">Numero di campioni <input type="number" min="1" step="1" data-nsid="${it.id}" value="${useNs[it.id] || 1}" style="width:100px"></label>
+    </div>`).join('')}
+    <div><button type="button" class="btn" id="calcSamples">Calcola</button></div></div>`;
 }
-function askUseSamples(){ useN = null; }   // il numero di campioni si scrive nella pagina e si conferma con Calcola
+function askUseSamples(){ useNs = {}; }   // il numero di campioni si scrive nella pagina e si conferma con Calcola
 function openProtoInstance(taskId){
   const t = taskById(taskId); if (!t || !t.kind || !t.kind.startsWith('proto:')) return;
   protoInst = taskId;
@@ -1393,7 +1394,7 @@ function instVal(key, def){
 // salva volume e campioni solo per questo giorno (non cambia il protocollo)
 async function saveInst(){
   const t = taskById(protoInst); if (!t) return;
-  const inst = {target: +$('rcTarget').value || null, n: $('rcN') ? (+$('rcN').value || 1) : null, ov: currentOv()};
+  const inst = {target: +$('rcTarget').value || null, n: useNs.self || null, ov: currentOv()};
   t.inst = JSON.stringify(inst);
   const {error} = await dbOp(curCal, 'tasks', 'update', {id: t.id, data: {inst: t.inst}});
   if (error){ if (!pinError(error)) flash('Non salvato: ' + error.message); }
@@ -3340,7 +3341,11 @@ root.addEventListener('click', e => {
     protoOpen = null; protoInst = null; render(); return;
   }
   if (e.target.closest('#mmCalc')){ mmOn = true; refreshCalc(); return; }
-  if (e.target.closest('#calcSamples')){ useN = Math.max(1, Math.floor(+($('rcN') && $('rcN').value)) || 1); render(); return; }
+  if (e.target.closest('#calcSamples')){
+    const nxt = {};
+    document.querySelectorAll('[data-nsid]').forEach(i => { nxt[i.dataset.nsid] = Math.max(1, Math.floor(+i.value) || 1); });
+    useNs = nxt; render(); return;
+  }
   if (e.target.closest('#protoPrint')){
     const p = protos.find(x => x.id === protoOpen); if (!p) return;
     const values = {};
@@ -3348,7 +3353,7 @@ root.addEventListener('click', e => {
     const rc = applyOv(recipeDefaults(parseRecipe(p.recipe)), currentOv());
     const target = rc.fixedVol ? rc.base.value : (+($('rcTarget') && $('rcTarget').value) || rc.base.value);
     // se ci sono campioni, chiede il numero prima di stampare
-    const n = rc.samples ? (useN || +($('rcN') && $('rcN').value) || 1) : 1;
+    const n = rc.samples ? (useNs.self || 1) : 1;
     const rows = calcItems(rc, target, n).filter(c => c.name);
     const td = 'border:1px solid #999;padding:4px 6px';
     const extra = (rc.pdf === 'line' ? lineRecipeHTML : compactRecipeHTML)('Calcoli' + (rc.samples ? ` · campioni: ${n}` : ''), rc.base.unit, target, rows) + mmHTML(rc, target, n);
