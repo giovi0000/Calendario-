@@ -1165,7 +1165,10 @@ function recipeEditorHTML(r, withSteps = true){
         <option value="calc" ${calc ? 'selected' : ''}>Calcolo (stock, PM, unità)</option>
       </select>
       <input data-simple data-rc="qty" type="number" step="any" value="${it.qty ?? ''}" placeholder="Quantità" ${calc ? 'hidden' : ''}>
-      <input data-simple data-rc="unit" type="text" value="${esc(it.unit || '')}" placeholder="Unità" ${calc ? 'hidden' : ''}>
+      <select data-simple data-rc="unit" ${calc ? 'hidden' : ''}>
+        <option value="" ${!it.unit ? 'selected' : ''}>Unità</option>
+        ${[...new Set(['µl','ml','l','mg','g','µg','ng','mol','mmol','µmol','nmol','U','mU','kU','pz', ...(it.unit && !['µl','ml','l','mg','g','µg','ng','mol','mmol','µmol','nmol','U','mU','kU','pz'].includes(it.unit) ? [it.unit] : [])])].map(u => `<option value="${esc(u)}" ${it.unit === u ? 'selected' : ''}>${esc(u)}</option>`).join('')}
+      </select>
       <div class="calcfields" data-calconly ${calc ? '' : 'hidden'}>
         <input data-rc="tv" type="number" step="any" value="${it.tv || ''}" placeholder="Valore finale">
         ${unitOpt('tu', it.tu, 'unità finale')}
@@ -1502,7 +1505,6 @@ function protoHTML(){
           <div id="plusMenu" hidden style="position:absolute;right:0;top:100%;margin-top:6px;display:grid;background:var(--panel);border:1px solid var(--line);border-radius:10px;min-width:220px;z-index:30;box-shadow:0 6px 18px rgba(0,0,0,.15);overflow:hidden">
             <button type="button" class="menuitem" data-plus="step">Passaggio</button>
             <button type="button" class="menuitem" data-plus="calc">Calcoli</button>
-            <button type="button" class="menuitem" data-plus="priv">Ricetta</button>
             <button type="button" class="menuitem" data-plus="text">Testo (più passaggi)</button>
             <button type="button" class="menuitem" data-plus="tools">Strumenti da prenotare</button>
           </div>
@@ -1533,8 +1535,8 @@ function protoHTML(){
     ${blocksFillHTML(rc)}
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       ${p.kind === 'recipe' ? '' : `<button type="button" class="btn" id="protoPlace">Metti in calendario</button>`}
-      ${protoInst ? `<button type="button" class="btn" id="protoInstSave">Salva per questo giorno</button>
-      <button type="button" class="btn" id="protoEditG">Modifica protocollo</button>` : ''}
+      ${protoInst ? `<button type="button" class="btn" id="protoInstSave">Salva per questo giorno</button>` : ''}
+      <button type="button" class="btn" id="protoEditG">Modifica protocollo</button>
       <button type="button" class="btn" id="protoPrint">Stampa / PDF</button>
       <button type="button" class="btn" id="protoClose">Chiudi</button>
     </div>
@@ -2103,6 +2105,7 @@ function entriesListHTML(p){
       <span class="ct" title="${esc(label)}">${esc(label)}</span>
       <button type="button" class="x" data-ent="up" data-i="${i}" aria-label="Sposta su" title="Sposta su">↑</button>
       <button type="button" class="x" data-ent="down" data-i="${i}" aria-label="Sposta giù" title="Sposta giù">↓</button>
+      ${b.type === 'recipe' && protos.find(x => x.id === b.id && x.owner) ? `<button type="button" class="btn sm" data-ent="rename" data-i="${i}">Rinomina</button>` : ''}
       <button type="button" class="btn sm" data-ent="edit" data-i="${i}">✎ Modifica</button>
       <button type="button" class="x trash" data-ent="del" data-i="${i}" aria-label="Elimina" title="Elimina">✕</button></div>`);
   });
@@ -3231,10 +3234,22 @@ root.addEventListener('click', e => {
   if (e.target.closest('#protoSave')){ protoSave(); return; }
   if (e.target.closest('#protoPlus')){ $('plusMenu').hidden = !$('plusMenu').hidden; return; }
   const plusBtn = e.target.closest('[data-plus]');
-  if (plusBtn){ $('plusMenu').hidden = true; if (plusBtn.dataset.plus === 'priv'){ privRecipeNew('nec'); return; } openEntry(plusBtn.dataset.plus, null); return; }
+  if (plusBtn){ $('plusMenu').hidden = true; openEntry(plusBtn.dataset.plus, null); return; }
   const entBtn = e.target.closest('[data-ent]');
   if (entBtn){
     const act = entBtn.dataset.ent, i = entBtn.dataset.i;
+    if (act === 'rename'){
+      const p = protos.find(x => x.id === protoOpen);
+      const b = p ? getBlocks(recipeDefaults(parseRecipe(p.recipe)))[+i] : null;
+      const calc = b && b.type === 'recipe' ? protos.find(x => x.id === b.id && x.owner) : null;
+      if (!calc) return;
+      const name = (window.prompt('Nuovo nome del calcolo:', calc.title) || '').trim();
+      if (!name || name === calc.title) return;
+      calc.title = name;
+      render();
+      dbOp(curCal, 'protocols', 'update', {id: calc.id, data: {title: name}}).then(({error}) => { if (error){ flash('Nome non salvato, riprova.'); loadProtocols().then(render); } });
+      return;
+    }
     if (act === 'edit'){
       if (i === 'calc'){ openEntry('calc', 'calc'); return; }
       if (i === 'tools'){ openEntry('tools', 'tools'); return; }
