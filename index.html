@@ -864,7 +864,7 @@ function readRecipeRows(){
     const g = f => { const el = row.querySelector(`[data-rc="${f}"]`); return el ? el.value : ''; };
     return {name: g('name').trim(), mode: g('mode'), qty: +g('qty') || 0, unit: g('unit').trim(),
             tv: +g('tv') || 0, tu: g('tu'), sv: +g('sv') || 0, su: g('su'),
-            pow: !!(row.querySelector('[data-rc="pow"]') || {}).checked,
+            pow: !!(row.querySelector('[data-rc="pow"]') || {}).checked, mm: !!(row.querySelector('[data-rc="mm"]') || {}).checked,
             vary: !!(row.querySelector('[data-rc="vary"]') || {}).checked, mw: +g('mw') || 0};
   });
 }
@@ -1166,6 +1166,7 @@ function recipeEditorHTML(r, withSteps = true){
         <option value="fixed" ${it.mode === 'fixed' ? 'selected' : ''}>Fisso</option>
         <option value="calc" ${calc ? 'selected' : ''}>Calcolo (stock, PM, unità)</option>
       </select>
+      <label class="note" style="display:flex;gap:4px;align-items:center"><input type="checkbox" data-rc="mm" ${it.mm ? 'checked' : ''}> Master mix</label>
       <input data-simple data-rc="qty" type="number" step="any" value="${it.qty ?? ''}" placeholder="Quantità" ${calc ? 'hidden' : ''}>
       <select data-simple data-rc="unit" ${calc ? 'hidden' : ''}>
         <option value="" ${!it.unit ? 'selected' : ''}>Unità</option>
@@ -1282,6 +1283,17 @@ function refreshStepCalcs(){
     el.textContent = c ? `${el.dataset.calc}: ${fmtNum(c.value)} ${c.unit}` : `{${el.dataset.calc}}`;
   });
 }
+// master mix: solo gli ingredienti spuntati, moltiplicati per il numero di campioni
+function mmHTML(rc, target, n){
+  // la master mix serve solo con più campioni
+  if (!(n > 1)) return '';
+  const mm = (rc.items || []).filter(i => i.mm && i.name);
+  if (!mm.length) return '';
+  const sub = calcItems({...rc, items: mm, fill: 'none'}, target, 1).filter(c => c.name);
+  const td = 'border:1px solid #999;padding:4px 6px';
+  return `<div class="note" style="margin-top:10px;font-weight:700">Master mix · ${n} ${n === 1 ? 'campione' : 'campioni'}</div>
+    <table style="border-collapse:collapse;width:100%">${sub.map(c => `<tr><td style="${td}">${esc(c.name)}</td><td style="${td};text-align:right;font-weight:650">${fmtNum(c.value * n)} ${esc(c.unit)}</td></tr>`).join('')}</table>`;
+}
 function refreshCalc(){
   refreshRecipeEdit();
   refreshStepCalcs();
@@ -1290,8 +1302,8 @@ function refreshCalc(){
   const target = +$('rcTarget').value || r.base.value;
   const n = r.samples ? (+($('rcN') && $('rcN').value) || 1) : 1;
   const rows = calcItems(r, target, n).filter(c => c.name);
-  $('rcOut').innerHTML = rows.length ? `<table style="border-collapse:collapse;width:100%">${rows.map(c =>
-    `<tr><td style="border-bottom:1px solid var(--line);padding:5px 6px">${esc(c.name)}</td><td style="border-bottom:1px solid var(--line);padding:5px 6px;text-align:right;font-weight:650">${fmtNum(c.value)} ${esc(c.unit)}</td></tr>`).join('')}</table>` : '';
+  $('rcOut').innerHTML = (rows.length ? `<table style="border-collapse:collapse;width:100%">${rows.map(c =>
+    `<tr><td style="border-bottom:1px solid var(--line);padding:5px 6px">${esc(c.name)}</td><td style="border-bottom:1px solid var(--line);padding:5px 6px;text-align:right;font-weight:650">${fmtNum(c.value)} ${esc(c.unit)}</td></tr>`).join('')}</table>` : '') + mmHTML(r, target, n);
 }
 async function loadProtocols(){ await loadAll(); }
 let protoFrom = 'lab';   // dove tornare quando si chiudono i protocolli: 'lab' o 'cal'
@@ -3311,10 +3323,17 @@ root.addEventListener('click', e => {
     document.querySelectorAll('[data-ph]').forEach(i => { values[i.dataset.ph] = i.value.trim(); });
     const rc = applyOv(recipeDefaults(parseRecipe(p.recipe)), currentOv());
     const target = +($('rcTarget') && $('rcTarget').value) || rc.base.value;
-    const n = rc.samples ? (+($('rcN') && $('rcN').value) || 1) : 1;
+    // se ci sono campioni, chiede il numero prima di stampare
+    let n = 1;
+    if (rc.samples){
+      const ans = window.prompt('Quanti campioni?', $('rcN') ? $('rcN').value : '1');
+      if (ans === null) return;
+      n = Math.max(1, Math.floor(+ans) || 1);
+      if ($('rcN')) $('rcN').value = n;
+    }
     const rows = calcItems(rc, target, n).filter(c => c.name);
     const td = 'border:1px solid #999;padding:4px 6px';
-    const extra = (rc.pdf === 'line' ? lineRecipeHTML : compactRecipeHTML)('Calcoli' + (rc.samples ? ` · campioni: ${n}` : ''), rc.base.unit, target, rows);
+    const extra = (rc.pdf === 'line' ? lineRecipeHTML : compactRecipeHTML)('Calcoli' + (rc.samples ? ` · campioni: ${n}` : ''), rc.base.unit, target, rows) + mmHTML(rc, target, n);
     const tdp = 'border:1px solid #999;padding:4px 6px';
     const stepsPrint = rc.steps.length ? '<h3>Passaggi</h3>' + rc.steps.map((st, si) => {
       let h = `<p><b>${si + 1}.</b> ${esc(st.text)}</p>`;
@@ -3455,12 +3474,7 @@ root.addEventListener('click', e => {
     if (act.dataset.act === 'note') openNote(id);
     return;
   }
-  const zone = e.target.closest('[data-drop]');
-  const onListItem = e.target.closest('#list [data-task]');
-  if (selectedId && zone && !onListItem){
-    applyDrop(zone, e.clientY, selectedId);
-    return;
-  }
+  // il clic su un giorno non sposta più l'evento selezionato: lo spostamento si fa trascinando
   const task = e.target.closest('[data-task]');
   if (task){ selectTask(task.dataset.task); showEvNote(task.dataset.task); }
 });
