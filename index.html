@@ -1157,7 +1157,7 @@ function recipeEditorHTML(r, withSteps = true){
   const rows = r.items.map((it, i) => {
     const calc = it.mode === 'calc';
     return `<div class="rcrow" data-rc-row="${i}">
-      <input data-rc="name" type="text" value="${esc(it.name || '')}" placeholder="Ingrediente o materiale">
+      <input data-rc="name" type="text" autocomplete="off" value="${esc(it.name || '')}" placeholder="Ingrediente o materiale">
       <select data-rc="mode">
         <option value="vol" ${(!it.mode || it.mode === 'vol') ? 'selected' : ''}>Cambia con il volume</option>
         <option value="sample" ${it.mode === 'sample' ? 'selected' : ''}>Per campione</option>
