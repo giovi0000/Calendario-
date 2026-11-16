@@ -745,8 +745,8 @@ let protoQuery = '';          // testo della ricerca nei protocolli
 const RECIPE_DEFAULT = () => JSON.stringify({base:{label:'Volume finale', value:1000, unit:'ml'}, items:[], steps:[], imports:[]});
 
 // ricetta collegata a un protocollo: calcola la tabella per il volume scelto
-function recipeTableHTML(rec, vol){
-  const rows = calcItems(rec, vol, 1).filter(c => c.name);
+function recipeTableHTML(rec, vol, nS){
+  const rows = calcItems(rec, vol, nS || 1).filter(c => c.name);
   if (!rows.length) return '';
   return `<table style="border-collapse:collapse;width:100%;margin:4px 0">${rows.map(c =>
     `<tr><td style="border-bottom:1px solid var(--line);padding:4px 6px">${esc(c.name)}</td><td style="border-bottom:1px solid var(--line);padding:4px 6px;text-align:right;font-weight:650">${fmtNum(c.value)} ${esc(c.unit)}</td></tr>`).join('')}</table>`;
@@ -1088,8 +1088,11 @@ function blocksFillHTML(rc){
       if (b.type === 'recipe'){
         const rec = protos.find(x => x.id === b.id); if (!rec) return '';
         const rr = recipeDefaults(parseRecipe(rec.recipe));
-        return `<div><div><b>${esc(rec.title)}</b> · volume <input data-impf="${i}" type="number" step="any" value="${b.vol}" style="width:110px"> ${esc(rr.base.unit)}</div>
-          <div id="imp-${i}">${recipeTableHTML(rr, b.vol)}</div></div>`;
+        const nC = rr.samples ? (useChildN[rec.id] || 1) : 1;
+        const volF = rr.fixedVol ? rr.base.value : b.vol;
+        const volHTML = rr.fixedVol ? '' : ` · volume <input data-impf="${i}" type="number" step="any" value="${b.vol}" style="width:110px"> ${esc(rr.base.unit)}`;
+        return `<div><div><b>${esc(rec.title)}</b>${rr.samples ? ` · campioni: ${nC}` : ''}${volHTML}</div>
+          <div id="imp-${i}">${recipeTableHTML(rr, volF, nC)}</div></div>`;
       }
       n++;
       // {Ingrediente} diventa nome e quantità calcolata; altre {parole} restano campi da compilare
@@ -1129,9 +1132,10 @@ function blocksPrint(rc){
         const rec = protos.find(x => x.id === b.id); if (!rec) return '';
         const rr = recipeDefaults(parseRecipe(rec.recipe));
         const inp = document.querySelector(`[data-impf="${i}"]`);
-        const vol = inp ? (+inp.value || 0) : b.vol;
-        const rowsR = calcItems(rr, vol, 1).filter(c => c.name);
-        return (b.fmt === 'line' ? lineRecipeHTML : compactRecipeHTML)(rec.title, rr.base.unit, vol, rowsR);
+        const nC = rr.samples ? (useChildN[rec.id] || 1) : 1;
+        const vol = rr.fixedVol ? rr.base.value : (inp ? (+inp.value || 0) : b.vol);
+        const rowsR = calcItems(rr, vol, nC).filter(c => c.name);
+        return (b.fmt === 'line' ? lineRecipeHTML : compactRecipeHTML)(rec.title + (rr.samples ? ` · campioni: ${nC}` : ''), rr.base.unit, vol, rowsR);
       }
       n++;
       const filled = (b.text || '').replace(/\{([^{}]+)\}/g, (m, k) => {
@@ -1360,12 +1364,23 @@ function openProto(){ protoFrom = view; view = 'proto'; protoOpen = null; render
 // protocollo aperto dal calendario: volume e campioni sono quelli di quel giorno
 let protoInst = null;   // id dell'attività del calendario
 let useN = null;   // campioni scelti all'apertura dell'uso
+let useChildN = {}; // campioni dei calcoli con nome, per id
 function askUseSamples(){
   const p = protos.find(x => x.id === protoOpen); if (!p) return;
   const rc = recipeDefaults(parseRecipe(p.recipe));
-  if (!rc.samples){ useN = null; return; }
-  const ans = window.prompt('Quanti campioni?', '1');
-  useN = ans === null ? 1 : Math.max(1, Math.floor(+ans) || 1);
+  useN = null; useChildN = {};
+  if (rc.samples){
+    const ans = window.prompt('Quanti campioni?', '1');
+    useN = ans === null ? 1 : Math.max(1, Math.floor(+ans) || 1);
+  }
+  getBlocks(rc).filter(b => b.type === 'recipe').forEach(b => {
+    const rec = protos.find(x => x.id === b.id);
+    if (!rec) return;
+    const rr = recipeDefaults(parseRecipe(rec.recipe));
+    if (!rr.samples) return;
+    const ans = window.prompt(`Quanti campioni per "${rec.title}"?`, '1');
+    useChildN[rec.id] = ans === null ? 1 : Math.max(1, Math.floor(+ans) || 1);
+  });
 }
 function openProtoInstance(taskId){
   const t = taskById(taskId); if (!t || !t.kind || !t.kind.startsWith('proto:')) return;
@@ -2206,7 +2221,7 @@ async function saveEntry(){
     const cr = parseRecipe(tmp.recipe);
     const child = {id: crypto.randomUUID(), group_id: null, calendar_id: curCal, kind: 'recipe', title: name, body: '',
       recipe: JSON.stringify({base: cr.base, items: (cr.items || []).filter(i => i.name), steps: [], imports: [], fill: cr.fill,
-        samples: cr.samples, pdf: $('etFmt') ? $('etFmt').value : 'list', own: true, owner: p.id}), created_at: Date.now()};
+        samples: cr.samples, fixedVol: cr.fixedVol, pdf: $('etFmt') ? $('etFmt').value : 'list', own: true, owner: p.id}), created_at: Date.now()};
     protos.push(protoFromDb(child));
     put({type: 'recipe', id: child.id, vol: cr.base.value, sec: 'nec'});
     const ins = await dbOp(curCal, 'protocols', 'insert', {data: child});
