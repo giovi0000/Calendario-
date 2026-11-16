@@ -1283,10 +1283,10 @@ function refreshStepCalcs(){
     el.textContent = c ? `${el.dataset.calc}: ${fmtNum(c.value)} ${c.unit}` : `{${el.dataset.calc}}`;
   });
 }
-// master mix: solo gli ingredienti spuntati, moltiplicati per il numero di campioni
+// master mix: solo gli ingredienti spuntati, moltiplicati per il numero di campioni; si mostra solo dopo il pulsante
+let mmOn = false;
 function mmHTML(rc, target, n){
-  // la master mix serve solo con più campioni
-  if (!(n > 1)) return '';
+  if (!mmOn || !(n > 1)) return '';
   const mm = (rc.items || []).filter(i => i.mm && i.name);
   if (!mm.length) return '';
   const sub = calcItems({...rc, items: mm, fill: 'none'}, target, 1).filter(c => c.name);
@@ -1541,7 +1541,7 @@ function protoHTML(){
     <h2 style="margin:0;font-size:15px">${esc(p.title)}</h2>
     ${(rc.items.length || rc.imports.length) ? `<div style="display:flex;gap:10px;flex-wrap:wrap">
         <label class="note">${esc(rc.base.label)} (${esc(rc.base.unit)}) <input id="rcTarget" type="number" step="any" value="${instVal('target', rc.base.value)}" style="width:140px"></label>
-        ${rc.samples ? `<label class="note">Campioni <input id="rcN" type="number" min="1" step="1" value="${instVal('n', 1)}" style="width:110px"></label>` : ''}
+        ${rc.samples ? `<label class="note">Campioni <input id="rcN" type="number" min="1" step="1" value="${instVal('n', 1)}" style="width:110px"></label> <button type="button" class="btn" id="mmCalc">Calcola master mix</button>` : ''}
       </div><div id="rcOut"></div>${ovHTML(rc)}` : ''}
     ${keys.length
       ? keys.map(k => `<label class="note">${esc(k)} <input data-ph="${esc(k)}" type="text" style="width:100%"></label>`).join('')
@@ -3317,6 +3317,7 @@ root.addEventListener('click', e => {
     if (protoParent){ protoOpen = protoParent; protoParent = null; protoMode = 'edit'; protoInst = null; render(); return; }
     protoOpen = null; protoInst = null; render(); return;
   }
+  if (e.target.closest('#mmCalc')){ mmOn = true; refreshCalc(); return; }
   if (e.target.closest('#protoPrint')){
     const p = protos.find(x => x.id === protoOpen); if (!p) return;
     const values = {};
