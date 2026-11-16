@@ -1092,7 +1092,8 @@ function blocksFillHTML(rc){
         const volF = rr.fixedVol ? rr.base.value : b.vol;
         const volHTML = rr.fixedVol ? '' : ` · volume <input data-impf="${i}" type="number" step="any" value="${b.vol}" style="width:110px"> ${esc(rr.base.unit)}`;
         return `<div><div><b>${esc(rec.title)}</b>${rr.samples ? ` · campioni: ${nC}` : ''}${volHTML}</div>
-          <div id="imp-${i}">${recipeTableHTML(rr, volF, nC)}</div></div>`;
+          <div id="imp-${i}">${recipeTableHTML(rr, volF, nC)}</div>
+          ${rr.items.some(x => x.mm) && nC > 1 ? (mmOn[rec.id] ? mmHTML(rr, volF, nC, rec.id) : `<button type="button" class="btn" data-mm="${rec.id}">Calcola master mix</button>`) : ''}</div>`;
       }
       n++;
       // {Ingrediente} diventa nome e quantità calcolata; altre {parole} restano campi da compilare
@@ -1135,7 +1136,7 @@ function blocksPrint(rc){
         const nC = rr.samples ? (useNs[rec.id] || 1) : 1;
         const vol = rr.fixedVol ? rr.base.value : (inp ? (+inp.value || 0) : b.vol);
         const rowsR = calcItems(rr, vol, nC).filter(c => c.name);
-        return (b.fmt === 'line' ? lineRecipeHTML : compactRecipeHTML)(rec.title + (rr.samples ? ` · campioni: ${nC}` : ''), rr.base.unit, vol, rowsR);
+        return (b.fmt === 'line' ? lineRecipeHTML : compactRecipeHTML)(rec.title + (rr.samples ? ` · campioni: ${nC}` : ''), rr.base.unit, vol, rowsR) + mmHTML(rr, vol, nC, rec.id);
       }
       n++;
       const filled = (b.text || '').replace(/\{([^{}]+)\}/g, (m, k) => {
@@ -1292,9 +1293,9 @@ function refreshStepCalcs(){
   });
 }
 // master mix: solo gli ingredienti spuntati, moltiplicati per il numero di campioni; si mostra solo dopo il pulsante
-let mmOn = false;
-function mmHTML(rc, target, n){
-  if (!mmOn || !(n > 1)) return '';
+let mmOn = {};   // master mix accesa per calcolo: 'self' = protocollo, altrimenti id del calcolo con nome
+function mmHTML(rc, target, n, key){
+  if (!mmOn[key] || !(n > 1)) return '';
   const mm = (rc.items || []).filter(i => i.mm && i.name);
   if (!mm.length) return '';
   const sub = calcItems({...rc, items: mm, fill: 'none'}, target, 1).filter(c => c.name);
@@ -1311,7 +1312,7 @@ function refreshCalc(){
   const n = r.samples ? (useNs.self || 1) : 1;
   const rows = calcItems(r, target, n).filter(c => c.name);
   $('rcOut').innerHTML = (rows.length ? `<table style="border-collapse:collapse;width:100%">${rows.map(c =>
-    `<tr><td style="border-bottom:1px solid var(--line);padding:5px 6px">${esc(c.name)}</td><td style="border-bottom:1px solid var(--line);padding:5px 6px;text-align:right;font-weight:650">${fmtNum(c.value)} ${esc(c.unit)}</td></tr>`).join('')}</table>` : '') + mmHTML(r, target, n);
+    `<tr><td style="border-bottom:1px solid var(--line);padding:5px 6px">${esc(c.name)}</td><td style="border-bottom:1px solid var(--line);padding:5px 6px;text-align:right;font-weight:650">${fmtNum(c.value)} ${esc(c.unit)}</td></tr>`).join('')}</table>` : '') + mmHTML(r, target, n, 'self');
 }
 async function loadProtocols(){ await loadAll(); }
 let protoFrom = 'lab';   // dove tornare quando si chiudono i protocolli: 'lab' o 'cal'
@@ -1564,7 +1565,7 @@ function protoHTML(){
     ${samplesBarHTML(p, rc)}
     ${(rc.items.length || rc.imports.length) ? `<div style="display:flex;gap:10px;flex-wrap:wrap">
         ${rc.fixedVol ? '' : `<label class="note">${esc(rc.base.label)} (${esc(rc.base.unit)}) <input id="rcTarget" type="number" step="any" value="${instVal('target', rc.base.value)}" style="width:140px"></label>`}
-        ${rc.samples ? `<button type="button" class="btn" id="mmCalc">Calcola master mix</button>` : ''}
+        ${rc.samples ? `<button type="button" class="btn" data-mm="self">Calcola master mix</button>` : ''}
       </div><div id="rcOut"></div>${ovHTML(rc)}` : ''}
     ${keys.length
       ? keys.map(k => `<label class="note">${esc(k)} <input data-ph="${esc(k)}" type="text" style="width:100%"></label>`).join('')
@@ -3340,7 +3341,8 @@ root.addEventListener('click', e => {
     if (protoParent){ protoOpen = protoParent; protoParent = null; protoMode = 'edit'; protoInst = null; render(); return; }
     protoOpen = null; protoInst = null; render(); return;
   }
-  if (e.target.closest('#mmCalc')){ mmOn = true; refreshCalc(); return; }
+  const mmBtn = e.target.closest('[data-mm]');
+  if (mmBtn){ mmOn[mmBtn.dataset.mm] = true; render(); return; }
   if (e.target.closest('#calcSamples')){
     const nxt = {};
     document.querySelectorAll('[data-nsid]').forEach(i => { nxt[i.dataset.nsid] = Math.max(1, Math.floor(+i.value) || 1); });
@@ -3356,7 +3358,7 @@ root.addEventListener('click', e => {
     const n = rc.samples ? (useNs.self || 1) : 1;
     const rows = calcItems(rc, target, n).filter(c => c.name);
     const td = 'border:1px solid #999;padding:4px 6px';
-    const extra = (rc.pdf === 'line' ? lineRecipeHTML : compactRecipeHTML)('Calcoli' + (rc.samples ? ` · campioni: ${n}` : ''), rc.base.unit, target, rows) + mmHTML(rc, target, n);
+    const extra = (rc.pdf === 'line' ? lineRecipeHTML : compactRecipeHTML)('Calcoli' + (rc.samples ? ` · campioni: ${n}` : ''), rc.base.unit, target, rows) + mmHTML(rc, target, n, 'self');
     const tdp = 'border:1px solid #999;padding:4px 6px';
     const stepsPrint = rc.steps.length ? '<h3>Passaggi</h3>' + rc.steps.map((st, si) => {
       let h = `<p><b>${si + 1}.</b> ${esc(st.text)}</p>`;
