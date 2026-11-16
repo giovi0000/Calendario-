@@ -785,7 +785,7 @@ function refreshImports(){
     const i = inp.dataset.impf, imp = getBlocks(rc)[i];
     const rec = imp && protos.find(x => x.id === imp.id);
     const out = $(`imp-${i}`);
-    if (rec && out) out.innerHTML = recipeTableHTML(recipeDefaults(parseRecipe(rec.recipe)), +inp.value || 0);
+    if (rec && out){ const rrN = recipeDefaults(parseRecipe(rec.recipe)); out.innerHTML = recipeTableHTML(rrN, rrN.fixedVol ? rrN.base.value : (+inp.value || 0), rrN.samples ? (useNs[rec.id] || 1) : 1); }
   });
 }
 
@@ -1296,12 +1296,22 @@ function refreshStepCalcs(){
 let mmOn = {};   // master mix accesa per calcolo: 'self' = protocollo, altrimenti id del calcolo con nome
 function mmHTML(rc, target, n, key){
   if (!mmOn[key] || !(n > 1)) return '';
-  const mm = (rc.items || []).filter(i => i.mm && i.name);
-  if (!mm.length) return '';
-  const sub = calcItems({...rc, items: mm, fill: 'none'}, target, 1).filter(c => c.name);
-  const td = 'border:1px solid #999;padding:4px 6px';
+  // valori per un campione dal calcolo (acqua compresa), poi × campioni per la master mix
+  const full = calcItems(rc, target, 1);
+  const inMM = full.map((o, i) => ({o, i})).filter(({o, i}) => i < rc.items.length && rc.items[i].mm && o.name).map(({o}) => o);
+  const outMM = full.map((o, i) => ({o, i})).filter(({o, i}) => i < rc.items.length && !rc.items[i].mm && o.name).map(({o}) => o);
+  if (!inMM.length) return '';
+  const td = 'border:1px solid var(--line);padding:5px 6px';
+  const rowsH = inMM.map(c => `<tr><td style="${td}">${esc(c.name)}</td><td style="${td};text-align:right;font-weight:650">${fmtNum(c.value * n)} ${esc(c.unit)}</td><td style="${td};text-align:right">${fmtNum(c.value)} ${esc(c.unit)}</td></tr>`).join('');
+  // volume della master mix: somma degli ingredienti che hanno un volume (µl, ml, l)
+  const mlOf = c => (VOL_F[normVolUnit(c.unit)] !== undefined ? c.value * VOL_F[normVolUnit(c.unit)] : null);
+  const perSampleMl = inMM.reduce((t, c) => { const v = mlOf(c); return v === null ? t : t + v; }, 0);
+  const totalMl = perSampleMl * n;
+  const hasVol = inMM.some(c => mlOf(c) !== null);
+  const volRow = hasVol ? `<div class="note" style="margin-top:8px">Master mix totale: <b>${fmtNum(totalMl * 1000)} µl</b> · in ogni eppendorf (uno per campione): <b>${fmtNum(perSampleMl * 1000)} µl</b> · ${n} eppendorf</div>` : '';
+  const rest = (volRow || '') + (outMM.length ? `<div class="note" style="margin-top:8px">Da aggiungere a parte in ogni eppendorf: ${outMM.map(c => `${esc(c.name)} ${fmtNum(c.value)} ${esc(c.unit)}`).join(' · ')}</div>` : '');
   return `<div class="note" style="margin-top:10px;font-weight:700">Master mix · ${n} ${n === 1 ? 'campione' : 'campioni'}</div>
-    <table style="border-collapse:collapse;width:100%">${sub.map(c => `<tr><td style="${td}">${esc(c.name)}</td><td style="${td};text-align:right;font-weight:650">${fmtNum(c.value * n)} ${esc(c.unit)}</td></tr>`).join('')}</table>`;
+    <table style="border-collapse:collapse;width:100%"><tr><td style="${td};font-weight:700">Ingrediente</td><td style="${td};font-weight:700;text-align:right">Totale</td><td style="${td};font-weight:700;text-align:right">Per eppendorf</td></tr>${rowsH}</table>${rest}`;
 }
 function refreshCalc(){
   refreshRecipeEdit();
@@ -3377,7 +3387,7 @@ root.addEventListener('click', e => {
       const rr = recipeDefaults(parseRecipe(rec.recipe));
       const inp = document.querySelector(`[data-impf="${i}"]`);
       const vol = inp ? (+inp.value || 0) : imp.vol;
-      return `<h3>Ricetta: ${esc(rec.title)}</h3><p>Volume: ${fmtNum(vol)} ${esc(rr.base.unit)}</p>${recipeTableHTML(rr, vol)}`;
+      return `<h3>Ricetta: ${esc(rec.title)}</h3><p>Volume: ${fmtNum(vol)} ${esc(rr.base.unit)}</p>${recipeTableHTML(rr, vol, rr.samples ? (useNs[rec.id] || 1) : 1)}`;
     }).join('');
     printProtocol(p.title, p.body, values, extra + blocksPrint(rc));
     return;
