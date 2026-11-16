@@ -806,6 +806,7 @@ function recipeDefaults(r){
     base: {label: r.base?.label || 'Volume', value: +r.base?.value || 100, unit: normVolUnit(r.base?.unit) || 'ml'},
     cat: r.cat || '',
     owner: r.owner || undefined,
+    fixedVol: !!r.fixedVol,
     samples: !!r.samples,
     items: (r.own !== false && Array.isArray(r.items)) ? r.items.map(migrateItem) : [],
     own: r.own !== false,
@@ -911,13 +912,14 @@ function calcOne(it, VL){
   return volRes(N / s);                  // Ci·Vi = Cf·Vf: Vi = N / Cstock
 }
 function calcItems(r, target, n){
-  const k = target / r.base.value;
-  const totalMl = target * (VOL_F[r.base.unit] || 1);
+  const nn = n || 1;                     // campioni: il volume totale è volume × campioni
+  const k = (target * nn) / r.base.value;
+  const totalMl = target * nn * (VOL_F[r.base.unit] || 1);
   const VL = totalMl / 1000;
   const out = r.items.map(it => {
     if (it.mode === 'calc') return calcOne(it, VL);
     const q = +it.qty || 0;
-    const value = it.mode === 'sample' ? q * n : (it.mode === 'fixed' ? q : q * k);
+    const value = it.mode === 'sample' ? q * nn : (it.mode === 'fixed' ? q : q * k);
     return {name: it.name, unit: normVolUnit(it.unit) || '', value};
   });
   // quanto occupa ogni ingrediente liquido, in ml
@@ -1208,6 +1210,7 @@ function recipeEditorHTML(r, withSteps = true){
         ${r.items.map((it, i) => `<option value="${i}" ${String(r.fill) === String(i) ? 'selected' : ''}>${esc(it.name || 'Ingrediente ' + (i + 1))}</option>`).join('')}
       </select></label>
     <label class="note" style="display:flex;gap:6px;align-items:center"><input id="rcSamples" type="checkbox" ${r.samples ? 'checked' : ''}> Ci sono campioni (il protocollo chiederà il numero)</label>
+    <label class="note" style="display:flex;gap:6px;align-items:center"><input id="rcFixedVol" type="checkbox" ${r.fixedVol ? 'checked' : ''}> Volume finale fisso (non chiederlo all'uso)</label>
     ${rows || '<div class="empty">Nessun ingrediente ancora.</div>'}
     <div class="note" id="rcH2O" style="font-weight:650;color:var(--fg)"></div>
     <div><button type="button" class="btn" data-proto-act="rcadd">+ Ingrediente</button></div>
@@ -1230,6 +1233,7 @@ function syncDraft(p){
     p.recipe = JSON.stringify({
       cat: parseRecipe(p.recipe).cat || '',
       owner: parseRecipe(p.recipe).owner || undefined,
+      fixedVol: $('rcFixedVol') ? $('rcFixedVol').checked : !!parseRecipe(p.recipe).fixedVol,
       base: {label: 'Volume finale', value: +$('rcBaseVal').value || 1, unit: normVolUnit($('rcBaseUnit').value) || 'ml'},
       samples: $('rcSamples').checked,
       own: $('rcOwn') ? $('rcOwn').checked : true,
@@ -1275,7 +1279,7 @@ function refreshRecipeEdit(){
 function refreshStepCalcs(){
   const p = protos.find(x => x.id === protoOpen); if (!p) return;
   const r = applyOv(recipeDefaults(parseRecipe(p.recipe)), currentOv());
-  const target = $('rcTarget') ? (+$('rcTarget').value || r.base.value) : r.base.value;
+  const target = (!r.fixedVol && $('rcTarget')) ? (+$('rcTarget').value || r.base.value) : r.base.value;
   const n = r.samples ? (+($('rcN') && $('rcN').value) || 1) : 1;
   const all = calcItems(r, target, n);
   document.querySelectorAll('[data-calc]').forEach(el => {
@@ -1299,7 +1303,7 @@ function refreshCalc(){
   refreshStepCalcs();
   const p = protos.find(x => x.id === protoOpen); if (!p || !$('rcTarget')) return;
   const r = applyOv(recipeDefaults(parseRecipe(p.recipe)), currentOv());
-  const target = +$('rcTarget').value || r.base.value;
+  const target = r.fixedVol ? r.base.value : (+($('rcTarget') && $('rcTarget').value) || r.base.value);
   const n = r.samples ? (+($('rcN') && $('rcN').value) || 1) : 1;
   const rows = calcItems(r, target, n).filter(c => c.name);
   $('rcOut').innerHTML = (rows.length ? `<table style="border-collapse:collapse;width:100%">${rows.map(c =>
@@ -1355,6 +1359,14 @@ async function importProtos(file){
 function openProto(){ protoFrom = view; view = 'proto'; protoOpen = null; render(); }
 // protocollo aperto dal calendario: volume e campioni sono quelli di quel giorno
 let protoInst = null;   // id dell'attività del calendario
+let useN = null;   // campioni scelti all'apertura dell'uso
+function askUseSamples(){
+  const p = protos.find(x => x.id === protoOpen); if (!p) return;
+  const rc = recipeDefaults(parseRecipe(p.recipe));
+  if (!rc.samples){ useN = null; return; }
+  const ans = window.prompt('Quanti campioni?', '1');
+  useN = ans === null ? 1 : Math.max(1, Math.floor(+ans) || 1);
+}
 function openProtoInstance(taskId){
   const t = taskById(taskId); if (!t || !t.kind || !t.kind.startsWith('proto:')) return;
   protoInst = taskId;
@@ -1362,6 +1374,7 @@ function openProtoInstance(taskId){
   protoOpen = t.kind.slice(6);
   protoMode = 'fill';
   view = 'proto';
+  askUseSamples();
   render();
 }
 function instVal(key, def){
@@ -1504,7 +1517,7 @@ function protoHTML(){
       ${recipeEditorHTML(recipeDefaults(parseRecipe(p.recipe)), false)}
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button type="button" class="btn" id="protoSave">Salva</button>
-        <button type="button" class="btn" data-proto-act="use" data-id="${p.id}">Calcola</button>
+        <button type="button" class="btn" data-proto-act="use" data-id="${p.id}">Usa / PDF</button>
         <button type="button" class="btn" id="protoClose">Chiudi</button>
       </div>
     </section>`;
@@ -1540,8 +1553,8 @@ function protoHTML(){
   return `<section class="panel" style="padding:12px;display:grid;gap:10px">
     <h2 style="margin:0;font-size:15px">${esc(p.title)}</h2>
     ${(rc.items.length || rc.imports.length) ? `<div style="display:flex;gap:10px;flex-wrap:wrap">
-        <label class="note">${esc(rc.base.label)} (${esc(rc.base.unit)}) <input id="rcTarget" type="number" step="any" value="${instVal('target', rc.base.value)}" style="width:140px"></label>
-        ${rc.samples ? `<label class="note">Campioni <input id="rcN" type="number" min="1" step="1" value="${instVal('n', 1)}" style="width:110px"></label> <button type="button" class="btn" id="mmCalc">Calcola master mix</button>` : ''}
+        ${rc.fixedVol ? '' : `<label class="note">${esc(rc.base.label)} (${esc(rc.base.unit)}) <input id="rcTarget" type="number" step="any" value="${instVal('target', rc.base.value)}" style="width:140px"></label>`}
+        ${rc.samples ? `<label class="note">Campioni <input id="rcN" type="number" min="1" step="1" value="${useN || instVal('n', 1)}" style="width:110px"></label> <button type="button" class="btn" id="mmCalc">Calcola master mix</button>` : ''}
       </div><div id="rcOut"></div>${ovHTML(rc)}` : ''}
     ${keys.length
       ? keys.map(k => `<label class="note">${esc(k)} <input data-ph="${esc(k)}" type="text" style="width:100%"></label>`).join('')
@@ -3323,7 +3336,7 @@ root.addEventListener('click', e => {
     const values = {};
     document.querySelectorAll('[data-ph]').forEach(i => { values[i.dataset.ph] = i.value.trim(); });
     const rc = applyOv(recipeDefaults(parseRecipe(p.recipe)), currentOv());
-    const target = +($('rcTarget') && $('rcTarget').value) || rc.base.value;
+    const target = rc.fixedVol ? rc.base.value : (+($('rcTarget') && $('rcTarget').value) || rc.base.value);
     // se ci sono campioni, chiede il numero prima di stampare
     let n = 1;
     if (rc.samples){
@@ -3361,7 +3374,7 @@ root.addEventListener('click', e => {
   const pa = e.target.closest('[data-proto-act]');
   if (pa){
     const id = pa.dataset.id;
-    if (pa.dataset.protoAct === 'use'){ protoOpen = id; protoInst = null; protoMode = 'fill'; render(); }
+    if (pa.dataset.protoAct === 'use'){ protoOpen = id; protoInst = null; protoMode = 'fill'; askUseSamples(); render(); }
     if (pa.dataset.protoAct === 'edit'){ protoOpen = id; protoMode = 'edit'; render(); }
     if (pa.dataset.protoAct === 'del'){ protoDelete(id); }
     if (pa.dataset.protoAct === 'tooladd' || pa.dataset.protoAct === 'tooldel'){
