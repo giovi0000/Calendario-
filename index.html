@@ -858,7 +858,9 @@ function migrateItem(it){
 }
 // legge le righe della ricetta dal form
 function readRecipeRows(){
-  return [...document.querySelectorAll('[data-rc-row]')].map(row => {
+  // legge solo le righe della finestra aperta: il popup dei calcoli e la pagina non si mescolano
+  const modalOpen = !$('entryModal').hidden;
+  return [...document.querySelectorAll('[data-rc-row]')].filter(row => row.closest('#entryModal') ? modalOpen : !modalOpen).map(row => {
     const g = f => { const el = row.querySelector(`[data-rc="${f}"]`); return el ? el.value : ''; };
     return {name: g('name').trim(), mode: g('mode'), qty: +g('qty') || 0, unit: g('unit').trim(),
             tv: +g('tv') || 0, tu: g('tu'), sv: +g('sv') || 0, su: g('su'),
@@ -2159,7 +2161,7 @@ function openEntry(kind, idx){
   $('entrySave').textContent = idx === null ? 'Aggiungi al protocollo' : 'Salva';
   $('entryModal').hidden = false;
 }
-function closeEntry(){ $('entryModal').hidden = true; entryState = null; }
+function closeEntry(){ $('entryModal').hidden = true; $('entryBody').innerHTML = ''; entryState = null; }
 async function persistRecipe(p){
   const {error} = await dbOp(curCal, 'protocols', 'update', {id: p.id, data: {recipe: p.recipe}});
   if (error){ if (!pinError(error)) flash('Non salvato: ' + error.message); loadAll(); }
@@ -3419,7 +3421,9 @@ root.addEventListener('click', e => {
         const rr = recipeDefaults(parseRecipe(tmp.recipe));
         if (pa.dataset.protoAct === 'rcadd') rr.items.push({name: '', qty: 0, unit: '', mode: 'calc'});
         else rr.items.splice(+pa.dataset.i, 1);
-        $('entryBody').innerHTML = `<div class="note">Ingredienti con stock e concentrazione finale, e il volume da preparare. Le quantità si calcolano da sole.</div>${recipeEditorHTML(rr, false)}${fmtSelHTML($('etFmt') ? $('etFmt').value : 'list')}`;
+        const nm = $('etCalcName') ? $('etCalcName').value : '';
+        const nameHTML = entryState && entryState.idx === null ? `<label class="note">Nome del calcolo <input id="etCalcName" type="text" value="${esc(nm)}" placeholder="Es. Tampone 1x" style="width:100%"></label>` : '';
+        $('entryBody').innerHTML = `<div class="note">Ingredienti con stock e concentrazione finale, e il volume da preparare. Le quantità si calcolano da sole.</div>${nameHTML}${recipeEditorHTML(rr, false)}${fmtSelHTML($('etFmt') ? $('etFmt').value : 'list')}`;
         return;
       }
       const p = protos.find(x => x.id === protoOpen); if (!p) return;
