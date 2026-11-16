@@ -739,7 +739,7 @@ const protoMatch = p => {
   if (!protoQuery) return true;
   return (p.title + ' ' + (p.cat || '')).toLowerCase().includes(protoQuery.toLowerCase());
 };
-const protoFromDb = r => ({id:r.id, groupId:r.group_id, kind:r.kind||'protocol', title:r.title, body:r.body||'', recipe:r.recipe||'', cat:parseRecipe(r.recipe).cat||'', createdAt:r.created_at||0});
+const protoFromDb = r => ({id:r.id, groupId:r.group_id, kind:r.kind||'protocol', title:r.title, body:r.body||'', recipe:r.recipe||'', cat:parseRecipe(r.recipe).cat||'', owner:parseRecipe(r.recipe).owner||'', createdAt:r.created_at||0});
 let protoTab = 'protocols';   // scheda attiva: 'protocols' oppure 'recipes'
 let protoQuery = '';          // testo della ricerca nei protocolli
 const RECIPE_DEFAULT = () => JSON.stringify({base:{label:'Volume finale', value:1000, unit:'ml'}, items:[], steps:[], imports:[]});
@@ -805,6 +805,7 @@ function recipeDefaults(r){
   return {
     base: {label: r.base?.label || 'Volume', value: +r.base?.value || 100, unit: normVolUnit(r.base?.unit) || 'ml'},
     cat: r.cat || '',
+    owner: r.owner || undefined,
     samples: !!r.samples,
     items: (r.own !== false && Array.isArray(r.items)) ? r.items.map(migrateItem) : [],
     own: r.own !== false,
@@ -915,12 +916,13 @@ function calcItems(r, target, n){
     if (it.mode === 'calc') return calcOne(it, VL);
     const q = +it.qty || 0;
     const value = it.mode === 'sample' ? q * n : (it.mode === 'fixed' ? q : q * k);
-    return {name: it.name, unit: it.unit || '', value};
+    return {name: it.name, unit: normVolUnit(it.unit) || '', value};
   });
   // quanto occupa ogni ingrediente liquido, in ml
   const usedOf = o => {
     if (o.vol) return Number.isFinite(o.L) ? o.L * 1000 : 0;
-    if (VOL_F[o.unit] !== undefined) return Number.isFinite(o.value) ? o.value * VOL_F[o.unit] : 0;
+    const vu = normVolUnit(o.unit);   // ul, uL, μl = µl; ml, mL = ml; l, L = l
+    if (VOL_F[vu] !== undefined) return Number.isFinite(o.value) ? o.value * VOL_F[vu] : 0;
     return 0;
   };
   // ingrediente scelto "a volume": prende tutto ciò che resta del volume finale
@@ -1023,7 +1025,7 @@ function readBlocks(){
 }
 function blocksEditorHTML(rc){
   const bl = getBlocks(rc);
-  const recOpts = protos.filter(p => p.kind === 'recipe').map(p => `<option value="${p.id}">${esc(p.title)}</option>`).join('');
+  const recOpts = protos.filter(p => p.kind === 'recipe' && !p.owner).map(p => `<option value="${p.id}">${esc(p.title)}</option>`).join('');
   const rowHTML = (b, i) => {
     const tools = `<button type="button" class="x" data-proto-act="blkup" data-i="${i}" aria-label="Sposta su" title="Sposta su">↑</button>
       <button type="button" class="x" data-proto-act="blkdown" data-i="${i}" aria-label="Sposta giù" title="Sposta giù">↓</button>
@@ -1033,7 +1035,7 @@ function blocksEditorHTML(rc){
       const rec = protos.find(x => x.id === b.id);
       const rr = rec ? recipeDefaults(parseRecipe(rec.recipe)) : null;
       body = `<span style="flex:2 1 160px">${esc(rec ? rec.title : 'Ricetta non trovata')}</span>
-        <input data-bf="vol" type="number" step="any" value="${b.vol}" style="flex:1 1 90px"> <span class="note">${esc(rr ? rr.base.unit : '')}</span>`;
+        <input data-bf="vol" type="number" step="any" value="${b.vol}" style="flex:1 1 90px"> <span class="note">${esc(rr ? rr.base.unit : '')}</span> ${rec && rec.owner ? `<button type="button" class="btn" data-proto-act="privedit" data-id="${b.id}">Modifica</button>` : ''}`;
     } else if (b.type === 'table'){
       body = `<input data-bf="text" type="text" value="${esc(b.text || '')}" placeholder="Titolo della tabella" style="flex:2 1 180px">
         <input data-bf="cols" type="text" value="${esc(b.cols || '')}" placeholder="Colonne, separate da virgola" style="flex:2 1 200px">
@@ -1056,6 +1058,7 @@ function blocksEditorHTML(rc){
       <div id="blkMenu-${key}" hidden style="display:grid;gap:6px;padding:8px;border:1px solid var(--line);border-radius:10px;max-width:520px">
         <button type="button" class="btn" data-proto-act="blkadd" data-t="text" data-sec="${key}">Passaggio (testo)</button>
         <button type="button" class="btn" data-proto-act="blkadd" data-t="table" data-sec="${key}">Tabella da compilare</button>
+        <button type="button" class="btn" data-proto-act="blkpriv" data-sec="${key}">+ Nuova ricetta privata</button>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
           <select id="blkRecSel-${key}" style="flex:1 1 180px">${recOpts || '<option value="">Nessuna ricetta: creala nella scheda Ricette</option>'}</select>
           <button type="button" class="btn" data-proto-act="blkadd" data-t="recipe" data-sec="${key}">Ricetta</button>
@@ -1183,7 +1186,7 @@ function recipeEditorHTML(r, withSteps = true){
       <input data-st-f="rows" type="number" min="1" value="${st.rows || 1}" placeholder="Righe">
       <button type="button" class="x trash" data-proto-act="stdel" data-i="${i}" aria-label="Togli passo" title="Togli passo">✕</button>
     </div>`).join('');
-  const stepsEditor = `<div class="note" style="margin-top:6px">Passaggi (facoltativi). Se un passaggio ha una tabella, nel protocollo compili le righe.</div>
+  const stepsEditor = `<div id="stepsEd" class="note" style="margin-top:6px">Passaggi (facoltativi). Se un passaggio ha una tabella, nel protocollo compili le righe.</div>
     ${stepRows || ''}
     <div><button type="button" class="btn" data-proto-act="stadd">+ Passo</button></div>`;
   return `<fieldset style="border:1px solid var(--line);border-radius:10px;padding:10px;display:grid;gap:8px;min-width:0">
@@ -1220,17 +1223,18 @@ function syncDraft(p){
     }));
     p.recipe = JSON.stringify({
       cat: parseRecipe(p.recipe).cat || '',
+      owner: parseRecipe(p.recipe).owner || undefined,
       base: {label: 'Volume finale', value: +$('rcBaseVal').value || 1, unit: normVolUnit($('rcBaseUnit').value) || 'ml'},
       samples: $('rcSamples').checked,
       own: $('rcOwn') ? $('rcOwn').checked : true,
       fill: $('rcFill') ? $('rcFill').value : 'h2o',
       items,
-      steps,
+      steps: $('stepsEd') ? steps : (parseRecipe(p.recipe).steps || []),
       tools: [...document.querySelectorAll('[data-tool]')].map(row => ({
         name: row.querySelector('[data-tf="name"]').value.trim(),
         lead: Math.max(0, parseInt(row.querySelector('[data-tf="lead"]').value, 10) || 0)
       })),
-      blocks: $('blkMenu') ? readBlocks() : undefined,
+      blocks: $('blkMenu') ? readBlocks() : parseRecipe(p.recipe).blocks,
       imports: [...document.querySelectorAll('[data-imp]')].map(row => ({
         id: row.dataset.id,
         vol: +row.querySelector('[data-impv]').value || 0
@@ -1289,7 +1293,7 @@ let protoFrom = 'lab';   // dove tornare quando si chiudono i protocolli: 'lab' 
 // esporta i protocolli (o le ricette) visibili, insieme alle ricette che usano
 function exportProtos(){
   const list = protos.filter(p => (p.kind === 'recipe') === (protoTab === 'recipes')
-    && protoMatch(p));
+    && !p.owner && protoMatch(p));
   if (!list.length){ flash('Niente da esportare.'); return; }
   const ids = new Set(list.map(p => p.id));
   list.forEach(p => getBlocks(recipeDefaults(parseRecipe(p.recipe)))
@@ -1357,6 +1361,24 @@ async function saveInst(){
   if (error){ if (!pinError(error)) flash('Non salvato: ' + error.message); }
   else flash('Salvato per questo giorno.');
 }
+let protoParent = null;   // protocollo padre quando si modifica una sua ricetta privata
+async function privRecipeNew(sec){
+  const p = protos.find(x => x.id === protoOpen); if (!p) return;
+  syncDraft(p);
+  const r = recipeDefaults(parseRecipe(p.recipe));
+  const bl = getBlocks(r);
+  const child = {id: crypto.randomUUID(), group_id: null, calendar_id: curCal, kind: 'recipe', title: 'Ricetta', body: '',
+                 recipe: JSON.stringify({base: {label: 'Volume finale', value: 100, unit: 'ml'}, items: [], steps: [], imports: [], owner: p.id}), created_at: Date.now()};
+  protos.push(protoFromDb(child));
+  bl.push({type: 'recipe', id: child.id, vol: 100, sec: sec || 'proc'});
+  r.blocks = bl;
+  p.recipe = JSON.stringify(r);
+  const ins = await dbOp(curCal, 'protocols', 'insert', {data: child});
+  const up = await dbOp(curCal, 'protocols', 'update', {id: p.id, data: {recipe: p.recipe}});
+  if (ins.error || up.error){ flash('Ricetta privata non salvata, riprova.'); await loadProtocols(); }
+  protoParent = p.id; protoOpen = child.id; protoMode = 'edit';
+  render();
+}
 async function protoNew(){
   const title = $('protoTitle').value.trim();
   if (!title){ flash('Scrivi il titolo del protocollo.'); return; }
@@ -1387,9 +1409,11 @@ async function protoSave(){
 async function protoDelete(id){
   const p = protos.find(x => x.id === id); if (!p) return;
   if (!(await askConfirm(`Eliminare il protocollo “${p.title}”?`))) return;
-  protos = protos.filter(x => x.id !== id);
+  const kids = protos.filter(x => x.owner === id);
+  protos = protos.filter(x => x.id !== id && x.owner !== id);
   if (protoOpen === id) protoOpen = null;
   render();
+  await Promise.all(kids.map(k => dbOp(curCal, 'protocols', 'delete', {id: k.id})));
   const {error} = await dbOp(curCal, 'protocols', 'delete', {id});
   if (error){ flash('Eliminazione non riuscita.'); await loadProtocols(); render(); }
 }
@@ -1410,21 +1434,21 @@ function printProtocol(title, body, values, extra = ''){
 }
 function protoHTML(){
   const list = protos.filter(p => (p.kind === 'recipe') === (protoTab === 'recipes')
-    && protoMatch(p)).sort((a,b) => (a.cat ? 0 : 1) - (b.cat ? 0 : 1) || (a.cat || '').localeCompare(b.cat || '', 'it') || a.createdAt - b.createdAt);
+    && !p.owner && protoMatch(p)).sort((a,b) => (a.cat ? 0 : 1) - (b.cat ? 0 : 1) || (a.cat || '').localeCompare(b.cat || '', 'it') || a.createdAt - b.createdAt);
   if (!protoOpen){
-    const rowHTML = p => `<div class="protorow">
+    const rowHTML = p => `<div class="protorow" draggable="true" data-pdrag="${p.id}">
         <button type="button" class="ct" data-proto-act="use" data-id="${p.id}" style="background:none;border:0;padding:6px 2px;text-align:left;font-weight:600;color:var(--fg);cursor:pointer">${esc(p.title)}</button>
         <button type="button" class="btn sm" data-proto-act="use" data-id="${p.id}">Usa / PDF</button>
         ${moreMenu(p.id, [{attr:'data-pm-edit', label:'Modifica'}, {attr:'data-pm-cat', label:'Sposta in categoria'}, {attr:'data-pm-exp', label:'Esporta'}, {attr:'data-pm-share', label:'Condividi'}, {attr:'data-pm-del', label:'Elimina', danger:true}])}
       </div>`;
-    const tabProtos = protos.filter(p => (p.kind === 'recipe') === (protoTab === 'recipes'));
+    const tabProtos = protos.filter(p => (p.kind === 'recipe') === (protoTab === 'recipes') && !p.owner);
     const grpCats = [...new Set([...tabProtos.map(p => p.cat).filter(Boolean), ...storedCats()])].sort((a, b) => a.localeCompare(b, 'it'));
     if (list.some(p => !p.cat)) grpCats.push('');
     const groups = grpCats.map(c => {
       const items = list.filter(p => (p.cat || '') === c);
       if (!items.length && protoQuery) return '';
       const closed = catClosed.has(c) && !protoQuery;
-      return `<div style="margin-top:10px;display:flex;gap:6px;align-items:center">
+      return `<div data-cat-drop="${esc(c)}" style="margin-top:10px;display:flex;gap:6px;align-items:center">
         <button type="button" class="btn sm" data-cat-toggle="${esc(c)}" style="flex:1;text-align:left;font-weight:700;background:${catColor(c)}">${closed ? '▸' : '▾'} ${esc(c || 'Senza categoria')} <span class="note">(${items.length})</span></button>
         ${c ? `<button type="button" class="btn sm" data-cat-edit="${esc(c)}" title="Rinomina o elimina" aria-label="Rinomina o elimina">✎</button>` : ''}
       </div>${closed ? '' : items.map(rowHTML).join('')}`;
@@ -1478,7 +1502,7 @@ function protoHTML(){
           <div id="plusMenu" hidden style="position:absolute;right:0;top:100%;margin-top:6px;display:grid;background:var(--panel);border:1px solid var(--line);border-radius:10px;min-width:220px;z-index:30;box-shadow:0 6px 18px rgba(0,0,0,.15);overflow:hidden">
             <button type="button" class="menuitem" data-plus="step">Passaggio</button>
             <button type="button" class="menuitem" data-plus="calc">Calcoli</button>
-            <button type="button" class="menuitem" data-plus="recipe">Ricetta</button>
+            <button type="button" class="menuitem" data-plus="priv">Ricetta</button>
             <button type="button" class="menuitem" data-plus="text">Testo (più passaggi)</button>
             <button type="button" class="menuitem" data-plus="tools">Strumenti da prenotare</button>
           </div>
@@ -1872,10 +1896,11 @@ async function deleteGroup(){
 // ---- pop up con le note dell'evento nel calendario ----
 let evNoteId = null;
 function showEvNote(id){
-  const t = taskById(id); if (!t || !t.note) return;
+  const t = taskById(id); if (!t) return;
   evNoteId = id;
   $('evNoteTitle').textContent = t.title;
-  $('evNoteBody').textContent = t.note;
+  $('evNoteBody').textContent = t.note || 'Nessuna nota ancora.';
+  $('evNoteEdit').textContent = t.note ? 'Modifica nota' : 'Aggiungi nota';
   $('evNoteModal').hidden = false;
 }
 function closeEvNote(){ $('evNoteModal').hidden = true; evNoteId = null; }
@@ -3206,7 +3231,7 @@ root.addEventListener('click', e => {
   if (e.target.closest('#protoSave')){ protoSave(); return; }
   if (e.target.closest('#protoPlus')){ $('plusMenu').hidden = !$('plusMenu').hidden; return; }
   const plusBtn = e.target.closest('[data-plus]');
-  if (plusBtn){ $('plusMenu').hidden = true; openEntry(plusBtn.dataset.plus, null); return; }
+  if (plusBtn){ $('plusMenu').hidden = true; if (plusBtn.dataset.plus === 'priv'){ privRecipeNew('nec'); return; } openEntry(plusBtn.dataset.plus, null); return; }
   const entBtn = e.target.closest('[data-ent]');
   if (entBtn){
     const act = entBtn.dataset.ent, i = entBtn.dataset.i;
@@ -3215,6 +3240,8 @@ root.addEventListener('click', e => {
       if (i === 'tools'){ openEntry('tools', 'tools'); return; }
       const p = protos.find(x => x.id === protoOpen);
       const b = p ? getBlocks(recipeDefaults(parseRecipe(p.recipe)))[+i] : null;
+      const own = b && b.type === 'recipe' ? protos.find(x => x.id === b.id) : null;
+      if (own && own.owner){ protoParent = protoOpen; protoOpen = own.id; protoMode = 'edit'; render(); return; }
       if (b) openEntry(b.type === 'recipe' ? 'recipe' : 'step', +i);
       return;
     }
@@ -3242,7 +3269,10 @@ root.addEventListener('click', e => {
   if (e.target.closest('#protoEditG')){ protoMode = 'edit'; render(); return; }
   if (e.target.closest('#protoPlace')){ openProtoPlace(); return; }
   if (e.target.closest('#protoPickBtn')){ addProtoToList(); return; }
-  if (e.target.closest('#protoClose')){ protoOpen = null; protoInst = null; render(); return; }
+  if (e.target.closest('#protoClose')){
+    if (protoParent){ protoOpen = protoParent; protoParent = null; protoMode = 'edit'; protoInst = null; render(); return; }
+    protoOpen = null; protoInst = null; render(); return;
+  }
   if (e.target.closest('#protoPrint')){
     const p = protos.find(x => x.id === protoOpen); if (!p) return;
     const values = {};
@@ -3302,6 +3332,8 @@ root.addEventListener('click', e => {
       render();
       return;
     }
+    if (pa.dataset.protoAct === 'blkpriv'){ privRecipeNew(pa.dataset.sec); return; }
+    if (pa.dataset.protoAct === 'privedit'){ protoParent = protoOpen; protoOpen = pa.dataset.id; protoMode = 'edit'; render(); return; }
     if (['blkmenu','blkadd','blkdel','blkup','blkdown'].includes(pa.dataset.protoAct)){
       const p = protos.find(x => x.id === protoOpen); if (!p) return;
       if (pa.dataset.protoAct === 'blkmenu'){ const m = $('blkMenu-' + pa.dataset.sec); if (m) m.hidden = !m.hidden; return; }
@@ -3550,7 +3582,7 @@ function tdClear(){
 }
 root.addEventListener('pointerdown', e => {
   if (e.pointerType !== 'touch') return;
-  const el = e.target.closest('[data-task],[data-bk]');
+  const el = e.target.closest('[data-task],[data-bk],[data-pdrag]');
   if (!el) return;
   tdPend = {x: e.clientX, y: e.clientY, el};
   tdTimer = setTimeout(() => {
@@ -3559,7 +3591,7 @@ root.addEventListener('pointerdown', e => {
     const ghost = tdPend.el.cloneNode(true);
     ghost.style.cssText = `position:fixed;pointer-events:none;opacity:.85;z-index:999;margin:0;width:${r.width}px;left:${tdPend.x}px;top:${tdPend.y}px;transform:translate(-50%,-50%)`;
     document.body.appendChild(ghost);
-    tdDrag = {el: tdPend.el, ghost, id: tdPend.el.dataset.task || ('bk:' + tdPend.el.dataset.bk)};
+    tdDrag = {el: tdPend.el, ghost, id: tdPend.el.dataset.task || (tdPend.el.dataset.pdrag ? 'pd:' + tdPend.el.dataset.pdrag : 'bk:' + tdPend.el.dataset.bk)};
     tdPend.el.classList.add('dragging');
     if (navigator.vibrate) navigator.vibrate(15);
   }, 350);
@@ -3572,7 +3604,7 @@ document.addEventListener('pointermove', e => {
   tdDrag.ghost.style.left = e.clientX + 'px';
   tdDrag.ghost.style.top = e.clientY + 'px';
   document.querySelectorAll('.over').forEach(n => n.classList.remove('over'));
-  const zone = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-drop]');
+  const zone = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-drop],[data-cat-drop]');
   if (zone) zone.classList.add('over');
 });
 // durante il trascinamento la pagina non scorre
@@ -3583,11 +3615,36 @@ document.addEventListener('pointerup', e => {
   const drag = tdDrag;
   const zone = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-drop]');
   tdClear(); tdEndedAt = Date.now();
+  if (drag.id.startsWith('pd:')){
+    const cz = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-cat-drop]');
+    const pp = cz && protos.find(x => x.id === drag.id.slice(3));
+    if (pp){ setProtoCat(pp, cz.dataset.catDrop || ''); render(); }
+    return;
+  }
   if (!zone) return;
   if (drag.id.startsWith('bk:')) dropBooking(zone, e.clientY, drag.id.slice(3));
   else applyDrop(zone, e.clientY, drag.id);
 });
 document.addEventListener('pointercancel', e => { if (e.pointerType === 'touch') tdClear(); });
+
+// ---- protocolli: trascinamento col mouse verso una cartella ----
+let pdDragId = null;
+document.addEventListener('dragstart', e => {
+  const el = e.target.closest && e.target.closest('[data-pdrag]'); if (!el) return;
+  pdDragId = el.dataset.pdrag; e.dataTransfer.effectAllowed = 'move';
+  try { e.dataTransfer.setData('text/plain', pdDragId); } catch(_) {}
+});
+document.addEventListener('dragover', e => {
+  if (pdDragId && e.target.closest && e.target.closest('[data-cat-drop]')) e.preventDefault();
+});
+document.addEventListener('drop', e => {
+  const z = e.target.closest && e.target.closest('[data-cat-drop]');
+  if (!pdDragId || !z) return;
+  e.preventDefault();
+  const pp = protos.find(x => x.id === pdDragId); pdDragId = null;
+  if (pp){ setProtoCat(pp, z.dataset.catDrop || ''); render(); }
+});
+document.addEventListener('dragend', () => { pdDragId = null; });
 
 // ---- avvio ----
 async function init(){
