@@ -1088,7 +1088,7 @@ function blocksFillHTML(rc){
       if (b.type === 'recipe'){
         const rec = protos.find(x => x.id === b.id); if (!rec) return '';
         const rr = recipeDefaults(parseRecipe(rec.recipe));
-        const nC = rr.samples ? (useChildN[rec.id] || 1) : 1;
+        const nC = rr.samples ? (useN || 1) : 1;
         const volF = rr.fixedVol ? rr.base.value : b.vol;
         const volHTML = rr.fixedVol ? '' : ` · volume <input data-impf="${i}" type="number" step="any" value="${b.vol}" style="width:110px"> ${esc(rr.base.unit)}`;
         return `<div><div><b>${esc(rec.title)}</b>${rr.samples ? ` · campioni: ${nC}` : ''}${volHTML}</div>
@@ -1132,7 +1132,7 @@ function blocksPrint(rc){
         const rec = protos.find(x => x.id === b.id); if (!rec) return '';
         const rr = recipeDefaults(parseRecipe(rec.recipe));
         const inp = document.querySelector(`[data-impf="${i}"]`);
-        const nC = rr.samples ? (useChildN[rec.id] || 1) : 1;
+        const nC = rr.samples ? (useN || 1) : 1;
         const vol = rr.fixedVol ? rr.base.value : (inp ? (+inp.value || 0) : b.vol);
         const rowsR = calcItems(rr, vol, nC).filter(c => c.name);
         return (b.fmt === 'line' ? lineRecipeHTML : compactRecipeHTML)(rec.title + (rr.samples ? ` · campioni: ${nC}` : ''), rr.base.unit, vol, rowsR);
@@ -1365,23 +1365,16 @@ function openProto(){ protoFrom = view; view = 'proto'; protoOpen = null; render
 let protoInst = null;   // id dell'attività del calendario
 let useN = null;   // campioni scelti all'apertura dell'uso
 let useChildN = {}; // campioni dei calcoli con nome, per id
-function askUseSamples(){
-  const p = protos.find(x => x.id === protoOpen); if (!p) return;
-  const rc = recipeDefaults(parseRecipe(p.recipe));
-  useN = null; useChildN = {};
-  if (rc.samples){
-    const ans = window.prompt('Quanti campioni?', '1');
-    useN = ans === null ? 1 : Math.max(1, Math.floor(+ans) || 1);
-  }
-  getBlocks(rc).filter(b => b.type === 'recipe').forEach(b => {
-    const rec = protos.find(x => x.id === b.id);
-    if (!rec) return;
-    const rr = recipeDefaults(parseRecipe(rec.recipe));
-    if (!rr.samples) return;
-    const ans = window.prompt(`Quanti campioni per "${rec.title}"?`, '1');
-    useChildN[rec.id] = ans === null ? 1 : Math.max(1, Math.floor(+ans) || 1);
-  });
+function samplesBarHTML(p, rc){
+  const kids = getBlocks(rc).filter(b => b.type === 'recipe').map(b => protos.find(x => x.id === b.id)).filter(Boolean);
+  const need = rc.samples || kids.some(k => recipeDefaults(parseRecipe(k.recipe)).samples);
+  if (!need) return '';
+  return `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+    <label class="note">Numero di campioni <input id="rcN" type="number" min="1" step="1" value="${useN || 1}" style="width:110px"></label>
+    <button type="button" class="btn" id="calcSamples">Calcola</button>
+  </div>`;
 }
+function askUseSamples(){ useN = null; }   // il numero di campioni si scrive nella pagina e si conferma con Calcola
 function openProtoInstance(taskId){
   const t = taskById(taskId); if (!t || !t.kind || !t.kind.startsWith('proto:')) return;
   protoInst = taskId;
@@ -1567,9 +1560,10 @@ function protoHTML(){
   const keys = [...new Set([...allText.matchAll(/\{([^{}]+)\}/g)].map(m => m[1].trim()))].filter(k => !ingNames.includes(k));
   return `<section class="panel" style="padding:12px;display:grid;gap:10px">
     <h2 style="margin:0;font-size:15px">${esc(p.title)}</h2>
+    ${samplesBarHTML(p, rc)}
     ${(rc.items.length || rc.imports.length) ? `<div style="display:flex;gap:10px;flex-wrap:wrap">
         ${rc.fixedVol ? '' : `<label class="note">${esc(rc.base.label)} (${esc(rc.base.unit)}) <input id="rcTarget" type="number" step="any" value="${instVal('target', rc.base.value)}" style="width:140px"></label>`}
-        ${rc.samples ? `<label class="note">Campioni <input id="rcN" type="number" min="1" step="1" value="${useN || instVal('n', 1)}" style="width:110px"></label> <button type="button" class="btn" id="mmCalc">Calcola master mix</button>` : ''}
+        ${rc.samples ? `<button type="button" class="btn" id="mmCalc">Calcola master mix</button>` : ''}
       </div><div id="rcOut"></div>${ovHTML(rc)}` : ''}
     ${keys.length
       ? keys.map(k => `<label class="note">${esc(k)} <input data-ph="${esc(k)}" type="text" style="width:100%"></label>`).join('')
@@ -3346,6 +3340,7 @@ root.addEventListener('click', e => {
     protoOpen = null; protoInst = null; render(); return;
   }
   if (e.target.closest('#mmCalc')){ mmOn = true; refreshCalc(); return; }
+  if (e.target.closest('#calcSamples')){ useN = Math.max(1, Math.floor(+($('rcN') && $('rcN').value)) || 1); render(); return; }
   if (e.target.closest('#protoPrint')){
     const p = protos.find(x => x.id === protoOpen); if (!p) return;
     const values = {};
@@ -3353,13 +3348,7 @@ root.addEventListener('click', e => {
     const rc = applyOv(recipeDefaults(parseRecipe(p.recipe)), currentOv());
     const target = rc.fixedVol ? rc.base.value : (+($('rcTarget') && $('rcTarget').value) || rc.base.value);
     // se ci sono campioni, chiede il numero prima di stampare
-    let n = 1;
-    if (rc.samples){
-      const ans = window.prompt('Quanti campioni?', $('rcN') ? $('rcN').value : '1');
-      if (ans === null) return;
-      n = Math.max(1, Math.floor(+ans) || 1);
-      if ($('rcN')) $('rcN').value = n;
-    }
+    const n = rc.samples ? (useN || +($('rcN') && $('rcN').value) || 1) : 1;
     const rows = calcItems(rc, target, n).filter(c => c.name);
     const td = 'border:1px solid #999;padding:4px 6px';
     const extra = (rc.pdf === 'line' ? lineRecipeHTML : compactRecipeHTML)('Calcoli' + (rc.samples ? ` · campioni: ${n}` : ''), rc.base.unit, target, rows) + mmHTML(rc, target, n);
