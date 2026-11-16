@@ -2149,8 +2149,10 @@ function openEntry(kind, idx){
     body = toolsEditorHTML(r);
   } else {
     title = 'Calcoli';
+    const edR = idx === null ? {...r, items: [], own: true} : r;
     body = `<div class="note">Ingredienti con stock e concentrazione finale, e il volume da preparare. Le quantità si calcolano da sole.</div>
-      ${recipeEditorHTML(r, false)}${fmtSelHTML(r.pdf)}`;
+      ${idx === null ? `<label class="note">Nome del calcolo <input id="etCalcName" type="text" placeholder="Es. Tampone 1x" style="width:100%"></label>` : ''}
+      ${recipeEditorHTML(edR, false)}${fmtSelHTML(r.pdf)}`;
   }
   $('entryTitle').textContent = title;
   $('entryBody').innerHTML = body;
@@ -2169,7 +2171,20 @@ async function saveEntry(){
   const bl = getBlocks(r);
   const {kind, idx} = entryState;
   const put = block => { if (idx === null || idx === 'calc') bl.push(block); else bl[idx] = block; };
-  if (kind === 'calc'){
+  if (kind === 'calc' && idx === null){
+    const name = ($('etCalcName') ? $('etCalcName').value : '').trim();
+    if (!name){ flash('Scrivi il nome del calcolo.'); return; }
+    const tmp = {title: '', body: '', recipe: ''};
+    syncDraft(tmp);
+    const cr = parseRecipe(tmp.recipe);
+    const child = {id: crypto.randomUUID(), group_id: null, calendar_id: curCal, kind: 'recipe', title: name, body: '',
+      recipe: JSON.stringify({base: cr.base, items: (cr.items || []).filter(i => i.name), steps: [], imports: [], fill: cr.fill,
+        samples: cr.samples, pdf: $('etFmt') ? $('etFmt').value : 'list', own: true, owner: p.id}), created_at: Date.now()};
+    protos.push(protoFromDb(child));
+    put({type: 'recipe', id: child.id, vol: cr.base.value, sec: 'nec'});
+    const ins = await dbOp(curCal, 'protocols', 'insert', {data: child});
+    if (ins.error){ flash('Calcolo non salvato, riprova.'); await loadProtocols(); return; }
+  } else if (kind === 'calc'){
     const tmp = {title: '', body: '', recipe: ''};
     syncDraft(tmp);
     const cr = parseRecipe(tmp.recipe);
