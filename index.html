@@ -405,17 +405,17 @@ html[data-style="win95"] [data-cat-toggle]{background:#c0c0c0;border:2px solid;b
 html[data-style="win95"] h2{font-family:inherit}
 html[data-style="win95"] .note{color:#000000}
 html[data-style="win95"] ::selection{background:#000080;color:#ffffff}
-/* sul telefono i menu si aprono in basso, sopra tutto, senza essere tagliati */
-@media (max-width:700px){
-  .menu,#plusMenu{position:fixed !important;left:10px !important;right:10px !important;bottom:10px !important;top:auto !important;margin:0 !important;min-width:0 !important;max-height:60vh;overflow:auto;z-index:300 !important;box-shadow:0 -6px 24px rgba(0,0,0,.25) !important}
-}
-/* correzione telefono: il testo va a capo e non esce dallo schermo */
+/* correzione telefono: testo a capo, campi uno sotto l'altro */
 @media (max-width:700px){
   .ct{white-space:normal!important;word-break:break-word;overflow-wrap:anywhere}
   .protorow{flex-wrap:wrap;max-width:100%}
   .protorow .ct{min-width:0!important;overflow:visible;text-overflow:clip}
   .protorow .note{min-width:0!important}
   .panel,.protocol,#view{max-width:100%;overflow-wrap:anywhere}
+  .rcrow{flex-direction:column;align-items:stretch}
+  .rcrow > *{flex:none!important;width:100%!important;min-width:0!important}
+  .rcrow > label.note{width:auto!important}
+  .rcrow > button.x{width:auto!important;align-self:flex-end}
 }
 </style>
 </head>
