@@ -405,18 +405,19 @@ html[data-style="win95"] [data-cat-toggle]{background:#c0c0c0;border:2px solid;b
 html[data-style="win95"] h2{font-family:inherit}
 html[data-style="win95"] .note{color:#000000}
 html[data-style="win95"] ::selection{background:#000080;color:#ffffff}
-/* correzione telefono: testo a capo, campi uno sotto l'altro */
-/* correzione telefono: testo a capo, campi uno sotto l'altro */
+/* correzione telefono */
 @media (max-width:700px){
   .ct{white-space:normal!important;word-break:break-word;overflow-wrap:anywhere}
   .protorow{flex-wrap:wrap;max-width:100%}
   .protorow .ct{min-width:0!important;overflow:visible;text-overflow:clip}
-  .protorow .note{min-width:0!important}
-  .panel,.protocol,#view{max-width:100%;overflow-wrap:anywhere}
-  .rcrow{flex-direction:column;align-items:stretch}
-  .rcrow > *{flex:none!important;width:100%!important;min-width:0!important}
-  .rcrow > label.note{width:auto!important}
-  .rcrow > button.x{width:auto!important;align-self:flex-end}
+  .panel,.protocol,#view,fieldset{max-width:100%;min-width:0;overflow-wrap:anywhere}
+
+  /* righe dei blocchi in modifica: una cosa sotto l'altra, tutta la larghezza */
+  [data-blk],[data-st],.rcrow{display:flex!important;flex-direction:column!important;align-items:stretch!important;width:100%!important}
+  [data-blk]>*,[data-st]>*,.rcrow>*{flex:0 0 auto!important;width:100%!important;max-width:100%!important;min-width:0!important;box-sizing:border-box}
+  [data-blk]>label,[data-st]>label,.rcrow>label{width:auto!important}
+  [data-blk]>button,[data-st]>button,.rcrow>button{width:auto!important;align-self:flex-end}
+  input,select,textarea{max-width:100%}
 }
 </style>
 </head>
