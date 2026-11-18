@@ -238,12 +238,19 @@ input,select,textarea{max-width:100%}
   .ov{min-height:200px}
   /* modifica protocollo su telefono: testi a capo e pulsanti dentro il riquadro */
   .protorow{align-items:flex-start;gap:6px;padding:10px}
+    /* modifica protocollo e finestra calcoli su telefono */
+  .protorow{align-items:flex-start;gap:6px;padding:10px}
   .protorow > .note{flex:1 1 100%;min-width:0!important;font-weight:700}
   .protorow .ct{flex:1 1 100%;min-width:0!important;white-space:normal;overflow:visible;text-overflow:clip;word-break:break-word;line-height:1.35}
   .protorow .btn,.protorow .x{min-height:36px;padding:6px 10px}
-  #entryModal .modal{width:100%}
+
+  #entryModal .modal{width:100%;max-width:calc(100vw - 16px)}
+  #entryBody,#entryBody fieldset,#entryBody fieldset>*{min-width:0;max-width:100%}
+  #entryBody label{flex-wrap:wrap}
+  #entryBody select,#entryBody input:not([type="checkbox"]){width:100%!important;max-width:100%;flex:1 1 100%;box-sizing:border-box}
+  #entryBody input[type="checkbox"]{width:auto!important;flex:0 0 auto;min-height:0}
   #entryBody .rcrow{flex-direction:column;align-items:stretch}
-  #entryBody .rcrow input,#entryBody .rcrow select{width:100%!important;flex:none}
+  #entryBody .rcrow label{justify-content:flex-start}
 }
 
 /* --- decorazioni dello stile rosa --- */
