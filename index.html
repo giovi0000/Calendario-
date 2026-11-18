@@ -405,17 +405,9 @@ html[data-style="win95"] [data-cat-toggle]{background:#c0c0c0;border:2px solid;b
 html[data-style="win95"] h2{font-family:inherit}
 html[data-style="win95"] .note{color:#000000}
 html[data-style="win95"] ::selection{background:#000080;color:#ffffff}
-/* correzione telefono */
+/* sul telefono i menu si aprono in basso, sopra tutto, senza essere tagliati */
 @media (max-width:700px){
-  .ct{white-space:normal!important;word-break:break-word;overflow-wrap:anywhere}
-  .protorow{flex-wrap:wrap}
-  .protorow .ct{min-width:0!important}
-  .rcrow{display:grid!important;grid-template-columns:minmax(0,1fr)!important;gap:8px!important;align-items:stretch!important}
-  .rcrow>*{width:100%!important;max-width:100%!important;min-width:0!important;flex:none!important;margin:0!important;box-sizing:border-box}
-  .rcrow>button{width:auto!important;justify-self:end}
-  .rcrow>label{width:auto!important;justify-self:start}
-  fieldset{min-width:0!important;max-width:100%!important}
-  .panel,#view{max-width:100%!important}
+  .menu,#plusMenu{position:fixed !important;left:10px !important;right:10px !important;bottom:10px !important;top:auto !important;margin:0 !important;min-width:0 !important;max-height:60vh;overflow:auto;z-index:300 !important;box-shadow:0 -6px 24px rgba(0,0,0,.25) !important}
 }
 </style>
 </head>
