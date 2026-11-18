@@ -408,16 +408,14 @@ html[data-style="win95"] ::selection{background:#000080;color:#ffffff}
 /* correzione telefono */
 @media (max-width:700px){
   .ct{white-space:normal!important;word-break:break-word;overflow-wrap:anywhere}
-  .protorow{flex-wrap:wrap;max-width:100%}
-  .protorow .ct{min-width:0!important;overflow:visible;text-overflow:clip}
-  .panel,.protocol,#view,fieldset{max-width:100%;min-width:0;overflow-wrap:anywhere}
-
-  /* righe dei blocchi in modifica: una cosa sotto l'altra, tutta la larghezza */
-  [data-blk],[data-st],.rcrow{display:flex!important;flex-direction:column!important;align-items:stretch!important;width:100%!important}
-  [data-blk]>*,[data-st]>*,.rcrow>*{flex:0 0 auto!important;width:100%!important;max-width:100%!important;min-width:0!important;box-sizing:border-box}
-  [data-blk]>label,[data-st]>label,.rcrow>label{width:auto!important}
-  [data-blk]>button,[data-st]>button,.rcrow>button{width:auto!important;align-self:flex-end}
-  input,select,textarea{max-width:100%}
+  .protorow{flex-wrap:wrap}
+  .protorow .ct{min-width:0!important}
+  .rcrow{display:grid!important;grid-template-columns:minmax(0,1fr)!important;gap:8px!important;align-items:stretch!important}
+  .rcrow>*{width:100%!important;max-width:100%!important;min-width:0!important;flex:none!important;margin:0!important;box-sizing:border-box}
+  .rcrow>button{width:auto!important;justify-self:end}
+  .rcrow>label{width:auto!important;justify-self:start}
+  fieldset{min-width:0!important;max-width:100%!important}
+  .panel,#view{max-width:100%!important}
 }
 </style>
 </head>
