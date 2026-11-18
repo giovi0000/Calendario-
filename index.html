@@ -414,6 +414,8 @@ html[data-style="win95"] ::selection{background:#000080;color:#ffffff}
   .ct{white-space:normal!important;word-break:break-word;overflow-wrap:anywhere}
   .protorow{flex-wrap:wrap}
   .protorow .ct{min-width:0!important}
+  div[style*="display:grid;gap:10px"]{width:100%!important;flex:1 1 100%!important;min-width:0!important;justify-self:stretch!important}
+  div[style*="display:grid;gap:10px"]>div{width:100%!important;min-width:0!important;text-align:left!important}
   .rcrow{display:grid!important;grid-template-columns:minmax(0,1fr)!important;gap:8px!important;align-items:stretch!important}
   .rcrow>*{width:100%!important;max-width:100%!important;min-width:0!important;flex:none!important;margin:0!important;box-sizing:border-box}
   .rcrow>button{width:auto!important;justify-self:end}
