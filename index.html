@@ -236,6 +236,14 @@ input,select,textarea{max-width:100%}
   .hl{font-size:9px;padding-left:2px}
   .pl{font-size:9px}
   .ov{min-height:200px}
+  /* modifica protocollo su telefono: testi a capo e pulsanti dentro il riquadro */
+  .protorow{align-items:flex-start;gap:6px;padding:10px}
+  .protorow > .note{flex:1 1 100%;min-width:0!important;font-weight:700}
+  .protorow .ct{flex:1 1 100%;min-width:0!important;white-space:normal;overflow:visible;text-overflow:clip;word-break:break-word;line-height:1.35}
+  .protorow .btn,.protorow .x{min-height:36px;padding:6px 10px}
+  #entryModal .modal{width:100%}
+  #entryBody .rcrow{flex-direction:column;align-items:stretch}
+  #entryBody .rcrow input,#entryBody .rcrow select{width:100%!important;flex:none}
 }
 
 /* --- decorazioni dello stile rosa --- */
