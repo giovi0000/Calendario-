@@ -409,6 +409,14 @@ html[data-style="win95"] ::selection{background:#000080;color:#ffffff}
 @media (max-width:700px){
   .menu,#plusMenu{position:fixed !important;left:10px !important;right:10px !important;bottom:10px !important;top:auto !important;margin:0 !important;min-width:0 !important;max-height:60vh;overflow:auto;z-index:300 !important;box-shadow:0 -6px 24px rgba(0,0,0,.25) !important}
 }
+/* correzione telefono: il testo va a capo e non esce dallo schermo */
+@media (max-width:700px){
+  .ct{white-space:normal!important;word-break:break-word;overflow-wrap:anywhere}
+  .protorow{flex-wrap:wrap;max-width:100%}
+  .protorow .ct{min-width:0!important;overflow:visible;text-overflow:clip}
+  .protorow .note{min-width:0!important}
+  .panel,.protocol,#view{max-width:100%;overflow-wrap:anywhere}
+}
 </style>
 </head>
 <body>
