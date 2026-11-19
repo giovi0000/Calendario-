@@ -236,19 +236,6 @@ input,select,textarea{max-width:100%}
   .hl{font-size:9px;padding-left:2px}
   .pl{font-size:9px}
   .ov{min-height:200px}
-    /* modifica protocollo e finestra calcoli su telefono */
-  .protorow{align-items:flex-start;gap:6px;padding:10px}
-  .protorow > .note{flex:1 1 100%;min-width:0!important;font-weight:700}
-  .protorow .ct{flex:1 1 100%;min-width:0!important;white-space:normal;overflow:visible;text-overflow:clip;word-break:break-word;line-height:1.35}
-  .protorow .btn,.protorow .x{min-height:36px;padding:6px 10px}
-
-  #entryModal .modal{width:100%;max-width:calc(100vw - 16px)}
-  #entryBody,#entryBody fieldset{grid-template-columns:minmax(0,1fr)!important;min-width:0;max-width:100%;overflow:hidden}
-  #entryBody fieldset > *{min-width:0;max-width:100%}
-  #entryBody label{flex-wrap:wrap}
-  #entryBody select,#entryBody input:not([type="checkbox"]){width:100%!important;max-width:100%!important;flex:none!important;height:auto}
-  #entryBody input[type="checkbox"]{width:auto!important;flex:none!important;min-height:0}
-  #entryBody .rcrow,#entryBody .calcfields{flex-direction:column;align-items:stretch;flex:none!important;width:100%}
 }
 
 /* --- decorazioni dello stile rosa --- */
@@ -421,6 +408,15 @@ html[data-style="win95"] ::selection{background:#000080;color:#ffffff}
 /* sul telefono i menu si aprono in basso, sopra tutto, senza essere tagliati */
 @media (max-width:700px){
   .menu,#plusMenu{position:fixed !important;left:10px !important;right:10px !important;bottom:10px !important;top:auto !important;margin:0 !important;min-width:0 !important;max-height:60vh;overflow:auto;z-index:300 !important;box-shadow:0 -6px 24px rgba(0,0,0,.25) !important}
+}
+/* telefono: nulla esce dallo schermo */
+@media (max-width:700px){
+  .wrap,.panel,.protorow,.rcrow,.calcfields,fieldset,.card{max-width:100%;min-width:0;box-sizing:border-box}
+  input,select,textarea,button{max-width:100%}
+  table{max-width:100%;display:block;overflow-x:auto}
+  .protorow{flex-wrap:wrap}
+  .protorow .ct{min-width:0;overflow-wrap:anywhere}
+  .rcrow{flex-wrap:wrap}
 }
 </style>
 </head>
