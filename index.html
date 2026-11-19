@@ -2253,6 +2253,7 @@ async function saveEntry(){
     r.items = (cr.items || []).filter(i => i.name);
     r.fill = cr.fill;
     r.samples = cr.samples;
+    r.fixedVol = cr.fixedVol;
     r.own = true;
     r.pdf = $('etFmt') ? $('etFmt').value : 'list';
   } else if (kind === 'text'){
