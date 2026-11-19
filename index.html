@@ -415,7 +415,11 @@ html[data-style="win95"] ::selection{background:#000080;color:#ffffff}
   input,select,textarea,button{max-width:100%}
   table{max-width:100%;display:block;overflow-x:auto}
   .protorow{flex-wrap:wrap}
-  .protorow .ct{min-width:0;overflow-wrap:anywhere}
+  .protorow > .note:first-child{min-width:0 !important;width:100%;flex:1 1 100%}
+  .protorow > .ct{flex:1 1 60%}
+  .protorow .ct{min-width:0;white-space:normal !important;overflow:visible;text-overflow:clip;overflow-wrap:anywhere;word-break:break-word}
+  .panel input[type=text],.panel input:not([type]){width:100%;min-width:0}
+  .panel input[type=text]{flex:1 1 100%}
   .rcrow{flex-wrap:wrap}
 }
 </style>
@@ -923,7 +927,7 @@ function calcOne(it, VL){
 function calcItems(r, target, n){
   const nn = n || 1;                     // campioni: il volume totale è volume × campioni
   const k = (target * nn) / r.base.value;
-  const totalMl = target * nn * (VOL_F[r.base.unit] || 1);
+  const totalMl = target * nn * (VOL_F[normVolUnit(r.base.unit)] || 1);
   const VL = totalMl / 1000;
   const out = r.items.map(it => {
     if (it.mode === 'calc') return calcOne(it, VL);
@@ -1131,7 +1135,7 @@ const fmtSelHTML = cur => `<label class="note">Nel PDF <select id="etFmt">
 function compactRecipeHTML(title, unit, volume, rows){
   if (!rows.length) return '';
   return `<div style="margin:6px 0 10px"><div style="font-weight:650">${esc(title)} · ${fmtNum(volume)} ${esc(unit)}</div>` +
-    rows.map(c => `<div style="font-size:12.5px;padding-left:10px">${esc(c.name)}: <b>${fmtNum(c.value)} ${esc(c.unit)}</b></div>`).join('') + `</div>`;
+    rows.map(c => `<div style="font-size:14px;padding-left:10px">${esc(c.name)}: <b>${fmtNum(c.value)} ${esc(c.unit)}</b></div>`).join('') + `</div>`;
 }
 function blocksPrint(rc){
   const td = 'border:1px solid #999;padding:4px 6px';
@@ -1319,7 +1323,7 @@ function mmHTML(rc, target, n, key){
   const hasVol = inMM.some(c => mlOf(c) !== null);
   const volRow = hasVol ? `<div class="note" style="margin-top:8px">Master mix totale: <b>${fmtNum(totalMl * 1000)} µl</b> · in ogni eppendorf (uno per campione): <b>${fmtNum(perSampleMl * 1000)} µl</b> · ${n} eppendorf</div>` : '';
   const rest = (volRow || '') + (outMM.length ? `<div class="note" style="margin-top:8px">Da aggiungere a parte in ogni eppendorf: ${outMM.map(c => `${esc(c.name)} ${fmtNum(c.value)} ${esc(c.unit)}`).join(' · ')}</div>` : '');
-  return `<div class="note" style="margin-top:10px;font-weight:700">Master mix · ${n} ${n === 1 ? 'campione' : 'campioni'}</div>
+  return `<div class="note blk" style="margin-top:10px;font-weight:700">Master mix · ${n} ${n === 1 ? 'campione' : 'campioni'}</div>
     <table style="border-collapse:collapse;width:100%"><tr><td style="${td};font-weight:700">Ingrediente</td><td style="${td};font-weight:700;text-align:right">Totale</td><td style="${td};font-weight:700;text-align:right">Per eppendorf</td></tr>${rowsH}</table>${rest}`;
 }
 function refreshCalc(){
@@ -1484,7 +1488,7 @@ function printProtocol(title, body, values, extra = ''){
   });
   const paras = filled.split('\n').map(l => l.trim() ? `<p>${l}</p>` : '<p>&nbsp;</p>').join('');
   const html = `<!doctype html><html lang="it"><head><meta charset="utf-8"><title>${esc(title)}</title>
-    <style>body{font:14px/1.55 system-ui,sans-serif;margin:28px;color:#111}h1{font-size:20px;margin:0 0 14px}p{margin:6px 0}@page{margin:18mm}</style>
+    <style>body{font:14px/1.55 system-ui,sans-serif;margin:28px;color:#111}h1{font-size:20px;margin:0 0 14px;break-after:avoid}p{margin:6px 0}@page{margin:18mm}table{width:100%;border-collapse:collapse;break-inside:avoid}tr{break-inside:avoid}td{padding:4px 6px;border-bottom:1px solid #ddd;font-size:14px}.note{font-size:13px;color:#444;break-after:avoid}.blk{break-inside:avoid}</style>
     </head><body><h1>${esc(title)}</h1>${paras}${extra}</body></html>`;
   const w = window.open('', '_blank');
   if (!w){ flash('Il browser ha bloccato la finestra. Consenti i popup per questo sito.'); return; }
