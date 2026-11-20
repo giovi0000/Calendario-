@@ -422,6 +422,10 @@ html[data-style="win95"] ::selection{background:#000080;color:#ffffff}
   .panel input[type=text]{flex:1 1 100%}
   .rcrow{flex-wrap:wrap}
 }
+/* testo lungo nelle righe: va a capo su qualsiasi schermo */
+.protorow{flex-wrap:wrap}
+.protorow .ct{white-space:normal !important;overflow:visible;text-overflow:clip;overflow-wrap:anywhere;word-break:break-word;min-width:0;flex:1 1 280px}
+.protorow > .note:first-child{min-width:0 !important}
 </style>
 </head>
 <body>
