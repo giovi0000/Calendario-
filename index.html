@@ -447,6 +447,28 @@ html[data-style="win95"] ::selection{background:#000080;color:#ffffff}
   .wf .wi.ro{cursor:default}
   .wf .wpin{display:flex;gap:6px;justify-content:center;margin-top:10px}
   .wf .wpin input{width:110px;font-size:16px;padding:8px;border:2px solid var(--line);border-radius:12px;text-align:center}
+
+  .wf{font-family:ui-rounded,"SF Pro Rounded","Nunito","Varela Round",system-ui,sans-serif}
+  .wf .wtabs{display:flex;gap:6px;justify-content:center;margin:4px 0 6px}
+  .wf .wtab{border:2px solid var(--accent);background:#fff;color:var(--accent);border-radius:999px;padding:6px 12px;font-size:15px;font-weight:800}
+  .wf .wtab.active{background:var(--accent);color:#fff}
+  .wf #wbody{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:2px}
+  .wf .wnav{text-align:center;margin:2px 0 4px}
+  .wf .wdow{font-size:16px;font-weight:800;color:var(--accent);text-transform:uppercase;letter-spacing:.5px}
+  .wf .wdate{font-size:30px;font-weight:900;color:var(--fg);line-height:1.1}
+  .wf .wdots{text-align:center;font-size:12px;color:var(--muted);margin-bottom:4px}
+  .wf .wi{font-size:22px;font-weight:700;padding:12px 14px;min-height:64px;border-radius:22px;border:none;box-shadow:0 3px 0 rgba(90,42,64,.15)}
+  .wf .wi:nth-child(odd){transform:rotate(-1deg)}
+  .wf .wi:nth-child(even){transform:rotate(1deg)}
+  .wf .wi .wtxt{line-height:1.2}
+  .wf .wtime{font-size:16px;font-weight:700;color:var(--accent)}
+  .wf .wsec{font-size:18px;font-weight:900;color:var(--accent);text-align:center;margin:4px 0}
+  .wf .wmsg{font-size:19px;font-weight:700;text-align:center;color:var(--muted);padding:14px 6px}
+  .wf .wbtn{font-size:18px;font-weight:800;padding:8px 14px;border-radius:999px;border:2px solid var(--accent);background:#fff;color:var(--accent)}
+  .wf .wbtn.big{font-size:20px;padding:10px 18px;background:var(--accent);color:#fff}
+  .wf .wbtns{display:flex;gap:8px;margin-top:8px}
+  .wf .wbtns.center{justify-content:center}
+  .wf .wpin input{font-size:20px;width:130px}
 </style>
 </head>
 <body>
@@ -3780,30 +3802,38 @@ async function watchMode(){
   const WCAL = new URLSearchParams(location.search).get('cal') || '';
   const DAYS = ['domenica','lunedì','martedì','mercoledì','giovedì','venerdì','sabato'];
   const MONTHS = ['gennaio','febbraio','marzo','aprile','maggio','giugno','luglio','agosto','settembre','ottobre','novembre','dicembre'];
+  const PAL = ['#ffd6e7','#d6eeff','#dff5d8','#fff0c2','#e6dcff','#ffe0cc'];
   const pad = n => String(n).padStart(2,'0');
   const keyOf = d => d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
-  const now = new Date();
-  const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate()+1);
+  const addDays = (d,n) => new Date(d.getFullYear(), d.getMonth(), d.getDate()+n);
+  const esc = t => String(t==null?'':t).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  let viewDate = new Date(); viewDate.setHours(0,0,0,0);
+  let tab = 'giorno', picking = false;
+  let tasks = [], protos = [];
+
   document.body.innerHTML = `<div class="wf">
-    <header><div id="wday"></div><div id="wdate"></div></header>
-    <div id="wlist"><div class="wmsg">Caricamento…</div></div></div>`;
+    <div class="wtabs">
+      <button class="wtab active" data-tab="giorno">Giorno</button>
+      <button class="wtab" data-tab="org">Da organizzare</button>
+    </div>
+    <div id="wbody"><div class="wmsg">Caricamento…</div></div>
+  </div>`;
   document.body.style.setProperty('background','#2b1f27','important');
   document.documentElement.style.setProperty('background','#2b1f27','important');
-  document.getElementById('wday').textContent = DAYS[now.getDay()];
-  document.getElementById('wdate').textContent = now.getDate()+' '+MONTHS[now.getMonth()];
-  const esc = t => String(t==null?'':t).replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
-  const list = () => document.getElementById('wlist');
-  const msg = t => { list().innerHTML = `<div class="wmsg">${t}</div>`; };
+  const body = () => document.getElementById('wbody');
+  const msg = t => { body().innerHTML = `<div class="wmsg">${t}</div>`; };
 
-  // i calendari servono per sapere se è protetto da PIN e per l'elenco di scelta
+  // calendari (per il PIN e per la scelta)
   const cr = await sb.from('calendars').select('*').order('position', {ascending:true});
   if (!cr.error){ calendars.length = 0; calendars.push(...(cr.data||[]).map(calFromDb)); }
+
   if (!WCAL){
-    const visibili = calendars.filter(c => !c.hidden);
-    list().innerHTML = '<div class="wsec">Scegli un calendario</div>' + (visibili.length
-      ? visibili.map(c => `<div class="wi ro" data-cal="${esc(c.id)}"><div class="wtxt">${esc(c.name)}${c.protected?' 🔒':''}</div></div>`).join('')
-      : '<div class="wmsg">Nessun calendario trovato</div>');
-    list().addEventListener('click', e => {
+    document.querySelector('.wtabs').style.display = 'none';
+    const vis = calendars.filter(c => !c.hidden);
+    body().innerHTML = '<div class="wsec">Scegli un calendario</div>' + (vis.length
+      ? vis.map(c => `<div class="wi" data-cal="${esc(c.id)}"><div class="wtxt">${esc(c.name)}${c.protected?' 🔒':''}</div></div>`).join('')
+      : '<div class="wmsg">Nessun calendario</div>');
+    body().addEventListener('click', e => {
       const el = e.target.closest('[data-cal]'); if (!el) return;
       const u = new URL(location.href); u.searchParams.set('cal', el.dataset.cal); u.searchParams.set('orologio', '');
       location.href = u.toString();
@@ -3811,59 +3841,102 @@ async function watchMode(){
     return;
   }
 
-  const showPin = (wrong) => {
-    list().innerHTML = `<div class="wmsg">Calendario protetto${wrong?'<br><b>PIN non valido</b>':''}</div>
-      <div class="wpin"><input id="wpinIn" type="password" inputmode="numeric" placeholder="PIN" autocomplete="off">
-      <button id="wpinOk" class="wbtn">Entra</button></div>`;
+  const showPin = wrong => {
+    document.querySelector('.wtabs').style.display = 'none';
+    body().innerHTML = `<div class="wmsg">Calendario protetto${wrong?'<br><b>PIN non valido</b>':''}</div>
+      <div class="wpin"><input id="wpinIn" type="password" inputmode="numeric" placeholder="PIN" autocomplete="off"><button id="wpinOk" class="wbtn">Entra</button></div>`;
     document.getElementById('wpinOk').onclick = async () => {
-      const v = document.getElementById('wpinIn').value.trim();
-      if (!v) return;
-      setPin(WCAL, v);
-      await refresh(true);
+      const v = document.getElementById('wpinIn').value.trim(); if (!v) return;
+      setPin(WCAL, v); await load(true);
     };
   };
 
-  const render = (today, unsched) => {
-    let h = '';
-    h += today.length
-      ? today.sort((a,b)=>String(a.slot||'zz').localeCompare(String(b.slot||'zz'))).map(t => `
-          <div class="wi ro ${t.done?'done':''}">
+  const dayItems = () => {
+    const k = keyOf(viewDate);
+    return tasks.filter(t => t.day === k).sort((a,b) => String(a.slot||'zz').localeCompare(String(b.slot||'zz')));
+  };
+  const draw = () => {
+    document.querySelectorAll('.wtab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+    if (tab === 'giorno'){
+      const items = dayItems();
+      body().innerHTML = `<div class="wnav"><div class="wdow">${DAYS[viewDate.getDay()]}</div>
+          <div class="wdate">${viewDate.getDate()} ${MONTHS[viewDate.getMonth()]}</div></div>
+        <div class="wdots">scorri per cambiare giorno</div>` +
+        (items.length ? items.map((t,i) => `<div class="wi ro" style="background:${PAL[i%PAL.length]}">
             <div class="wtxt">${esc(t.title)}${t.slot?`<span class="wtime">${esc(t.slot)}</span>`:''}</div></div>`).join('')
-      : '<div class="wmsg">Niente in programma oggi</div>';
-    if (unsched.length){
-      h += `<div class="wsec">Da organizzare</div>` + unsched.map(t => `
-        <div class="wi" data-id="${esc(t.id)}">
-          <div class="wtxt">${esc(t.title)}</div>
-          <div class="wbtns"><button class="wbtn" data-go="today">Oggi</button><button class="wbtn" data-go="tomorrow">Domani</button></div></div>`).join('');
+          : '<div class="wmsg">Niente in programma</div>');
+      return;
     }
-    list().innerHTML = h;
+    // tab "Da organizzare"
+    if (picking){
+      const q = protos.length ? protos.map((p,i) => `<div class="wi" style="background:${PAL[i%PAL.length]}" data-addp="${esc(p.id)}"><div class="wtxt">${esc(p.title)}</div></div>`).join('')
+        : '<div class="wmsg">Nessun protocollo</div>';
+      body().innerHTML = `<div class="wsec">Scegli un protocollo</div>${q}<div class="wbtns center"><button class="wbtn" data-back="1">Indietro</button></div>`;
+      return;
+    }
+    const un = tasks.filter(t => !t.day);
+    body().innerHTML = `<div class="wbtns center"><button class="wbtn big" data-pick="1">+ Protocollo</button></div>` +
+      (un.length ? un.map((t,i) => `<div class="wi" style="background:${PAL[i%PAL.length]}" data-id="${esc(t.id)}">
+          <div class="wtxt">${esc(t.title)}</div>
+          <div class="wbtns"><button class="wbtn" data-go="today">Oggi</button><button class="wbtn" data-go="tomorrow">Domani</button></div></div>`).join('')
+        : '<div class="wmsg">Niente da organizzare</div>');
   };
 
-  const refresh = async (fromPin) => {
+  const load = async fromPin => {
     const {data, error} = await dbSelect('tasks', WCAL);
     if (error){
       if (isProt(WCAL)){ if (fromPin) dropPin(WCAL); showPin(!!fromPin); return; }
       msg('Calendario non raggiungibile'); return;
     }
-    const all = (data||[]).map(t => ({id:t.id, title:t.title, slot:t.slot, done:!!t.done, day:t.day}));
-    const today = all.filter(t => t.day === keyOf(now));
-    const unsched = all.filter(t => !t.day);
-    render(today, unsched);
-    window.__wtasks = all;
+    tasks = (data||[]).map(t => ({id:t.id, title:t.title, slot:t.slot, done:!!t.done, day:t.day, kind:t.kind}));
+    const pr = await dbSelect('protocols', WCAL);
+    protos = (pr.data||[]).filter(p => p.kind !== 'recipe' && !parseRecipe(p.recipe).owner);
+    document.querySelector('.wtabs').style.display = '';
+    draw();
   };
 
-  list().addEventListener('click', async e => {
-    const btn = e.target.closest('[data-go]'); if (!btn) return;
-    const row = btn.closest('.wi'); const id = row && row.dataset.id; if (!id) return;
-    const day = btn.dataset.go === 'today' ? keyOf(now) : keyOf(tomorrow);
-    btn.disabled = true;
-    const {error} = await dbOp(WCAL, 'tasks', 'update', {id, data: {day, slot: null}});
-    if (error){ msg('Spostamento non riuscito, riprova'); return; }
-    await refresh();
+  // schede in alto
+  document.querySelector('.wf').addEventListener('click', async e => {
+    const tb = e.target.closest('.wtab');
+    if (tb){ tab = tb.dataset.tab; picking = false; draw(); return; }
   });
+  // azioni nelle schede
+  body().addEventListener('click', async e => {
+    if (e.target.closest('[data-pick]')){ picking = true; draw(); return; }
+    if (e.target.closest('[data-back]')){ picking = false; draw(); return; }
+    const addp = e.target.closest('[data-addp]');
+    if (addp){
+      const p = protos.find(x => x.id === addp.dataset.addp); if (!p) return;
+      const row = {id: crypto.randomUUID(), title: p.title, day: null, slot: null, done: false,
+                   category: null, kind: 'proto:' + p.id, created_at: Date.now(), calendar_id: WCAL};
+      picking = false;
+      const {error} = await dbOp(WCAL, 'tasks', 'insert', {data: row});
+      if (error){ msg('Non aggiunto, riprova'); return; }
+      await load(); return;
+    }
+    const go = e.target.closest('[data-go]');
+    if (go){
+      const row = go.closest('[data-id]'); if (!row) return;
+      const day = go.dataset.go === 'today' ? keyOf(new Date()) : keyOf(addDays(new Date(), 1));
+      go.disabled = true;
+      const {error} = await dbOp(WCAL, 'tasks', 'update', {id: row.dataset.id, data: {day, slot: null}});
+      if (error){ msg('Spostamento non riuscito, riprova'); return; }
+      await load(); return;
+    }
+  });
+  // scorrimento orizzontale: cambia giorno nella scheda Giorno
+  let sx = null, sy = null;
+  body().addEventListener('touchstart', e => { sx = e.touches[0].clientX; sy = e.touches[0].clientY; }, {passive:true});
+  body().addEventListener('touchend', e => {
+    if (sx === null || tab !== 'giorno') { sx = null; return; }
+    const dx = e.changedTouches[0].clientX - sx, dy = e.changedTouches[0].clientY - sy; sx = null;
+    if (Math.abs(dx) > 35 && Math.abs(dx) > Math.abs(dy) * 1.2){
+      viewDate = addDays(viewDate, dx < 0 ? 1 : -1); draw();
+    }
+  }, {passive:true});
 
   if (isProt(WCAL) && !pinFor(WCAL)){ showPin(false); return; }
-  await refresh();
+  await load();
 }
 async function init(){
   if (isWatch()){ watchMode(); return; }
