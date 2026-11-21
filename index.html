@@ -426,6 +426,19 @@ html[data-style="win95"] ::selection{background:#000080;color:#ffffff}
 .protorow{flex-wrap:wrap}
 .protorow .ct{white-space:normal !important;overflow:visible;text-overflow:clip;overflow-wrap:anywhere;word-break:break-word;min-width:0;flex:1 1 280px}
 .protorow > .note:first-child{min-width:0 !important}
+
+  .wf{position:fixed;inset:0;margin:auto;width:min(100vw,100vh);height:min(100vw,100vh);border-radius:50%;background:var(--bg);overflow:hidden;display:flex;flex-direction:column;padding:14% 12% 10%;color:var(--fg);font-family:ui-rounded,system-ui,-apple-system,"Segoe UI",sans-serif}
+  .wf header{text-align:center;margin-bottom:6px}
+  .wf #wday{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px}
+  .wf #wdate{font-size:22px;font-weight:700;color:var(--accent)}
+  .wf #wlist{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:4px 2px}
+  .wf .wi{display:flex;align-items:center;gap:10px;padding:10px 12px;margin:8px 0;background:var(--panel);border:2px solid var(--line);border-radius:16px;font-size:16px;line-height:1.25;min-height:52px;cursor:pointer;user-select:none}
+  .wf .wi.done{background:#e4f0df;text-decoration:line-through;color:var(--muted)}
+  .wf .wbox{flex:0 0 26px;height:26px;border:3px solid var(--accent);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:18px;color:#fff}
+  .wf .wi.done .wbox{background:var(--accent)}
+  .wf .wtxt{flex:1;min-width:0;overflow-wrap:anywhere}
+  .wf .wtime{display:block;font-size:12px;color:var(--muted);margin-top:2px}
+  .wf .wmsg{text-align:center;color:var(--muted);font-size:15px;padding:20px 6px}
 </style>
 </head>
 <body>
@@ -3748,7 +3761,51 @@ document.addEventListener('drop', e => {
 document.addEventListener('dragend', () => { pdDragId = null; });
 
 // ---- avvio ----
+
+// ---- modalità orologio: schermo piccolo e rotondo, oppure ?orologio nell'indirizzo ----
+function isWatch(){
+  // schermo piccolo e quasi quadrato (orologio rotondo), oppure ?orologio nell'indirizzo
+  const w = innerWidth, h = innerHeight;
+  return new URLSearchParams(location.search).has('orologio') || (Math.max(w, h) <= 480 && Math.abs(w - h) <= 40);
+}
+function watchMode(){
+  const WCAL = new URLSearchParams(location.search).get('cal') || '';
+  const DAYS = ['domenica','lunedì','martedì','mercoledì','giovedì','venerdì','sabato'];
+  const MONTHS = ['gennaio','febbraio','marzo','aprile','maggio','giugno','luglio','agosto','settembre','ottobre','novembre','dicembre'];
+  const pad = n => String(n).padStart(2,'0');
+  const keyToday = () => { const d=new Date(); return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()); };
+  document.body.innerHTML = `<div class="wf">
+    <header><div id="wday"></div><div id="wdate"></div></header>
+    <div id="wlist"><div class="wmsg">Caricamento…</div></div></div>`;
+  document.body.style.setProperty('background','#2b1f27','important');
+  document.documentElement.style.setProperty('background','#2b1f27','important');
+  const d = new Date();
+  document.getElementById('wday').textContent = DAYS[d.getDay()];
+  document.getElementById('wdate').textContent = d.getDate()+' '+MONTHS[d.getMonth()];
+  let current = [];
+  const render = () => {
+    const list = document.getElementById('wlist');
+    if (!current.length){ list.innerHTML = '<div class="wmsg">Niente in programma oggi</div>'; return; }
+    current.sort((a,b)=>String(a.slot||'zz').localeCompare(String(b.slot||'zz')));
+    list.innerHTML = current.map(t => `<div class="wi ${t.done?'done':''}" data-id="${t.id}">
+        <div class="wbox">${t.done?'✓':''}</div>
+        <div class="wtxt">${String(t.title||'').replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}${t.slot?`<span class="wtime">${t.slot}</span>`:''}</div></div>`).join('');
+  };
+  if (!WCAL){ document.getElementById('wlist').innerHTML = '<div class="wmsg">Apri il link con ?cal=nome-calendario</div>'; return; }
+  sb.from('tasks').select('*').eq('calendar_id', WCAL).eq('day', keyToday()).then(({data, error}) => {
+    if (error){ document.getElementById('wlist').innerHTML = '<div class="wmsg">Calendario protetto o non raggiungibile: apri l\'app sul telefono</div>'; return; }
+    current = (data||[]).map(t => ({id:t.id, title:t.title, slot:t.slot, done:!!t.done}));
+    render();
+  });
+  document.getElementById('wlist').addEventListener('click', e => {
+    const el = e.target.closest('.wi'); if (!el) return;
+    const t = current.find(x => String(x.id) === el.dataset.id); if (!t) return;
+    t.done = !t.done; render();
+    sb.from('tasks').update({done: t.done}).eq('id', t.id).then(({error}) => { if (error){ t.done = !t.done; render(); } });
+  });
+}
 async function init(){
+  if (isWatch()){ watchMode(); return; }
   document.getElementById('loadingMsg')?.remove();
   render();
   const ok = await loadCalendars();
