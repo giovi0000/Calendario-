@@ -439,6 +439,14 @@ html[data-style="win95"] ::selection{background:#000080;color:#ffffff}
   .wf .wtxt{flex:1;min-width:0;overflow-wrap:anywhere}
   .wf .wtime{display:block;font-size:12px;color:var(--muted);margin-top:2px}
   .wf .wmsg{text-align:center;color:var(--muted);font-size:15px;padding:20px 6px}
+
+  .wf .wsec{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin:12px 4px 0}
+  .wf .wbtns{display:flex;gap:6px;margin-top:6px}
+  .wf .wbtn{border:2px solid var(--accent);background:#fff;color:var(--accent);border-radius:999px;padding:6px 12px;font-size:14px;font-weight:600}
+  .wf .wbtn:disabled{opacity:.5}
+  .wf .wi.ro{cursor:default}
+  .wf .wpin{display:flex;gap:6px;justify-content:center;margin-top:10px}
+  .wf .wpin input{width:110px;font-size:16px;padding:8px;border:2px solid var(--line);border-radius:12px;text-align:center}
 </style>
 </head>
 <body>
@@ -3768,41 +3776,83 @@ function isWatch(){
   const w = innerWidth, h = innerHeight;
   return new URLSearchParams(location.search).has('orologio') || (Math.max(w, h) <= 480 && Math.abs(w - h) <= 40);
 }
-function watchMode(){
+async function watchMode(){
   const WCAL = new URLSearchParams(location.search).get('cal') || '';
   const DAYS = ['domenica','lunedì','martedì','mercoledì','giovedì','venerdì','sabato'];
   const MONTHS = ['gennaio','febbraio','marzo','aprile','maggio','giugno','luglio','agosto','settembre','ottobre','novembre','dicembre'];
   const pad = n => String(n).padStart(2,'0');
-  const keyToday = () => { const d=new Date(); return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()); };
+  const keyOf = d => d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+  const now = new Date();
+  const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate()+1);
   document.body.innerHTML = `<div class="wf">
     <header><div id="wday"></div><div id="wdate"></div></header>
     <div id="wlist"><div class="wmsg">Caricamento…</div></div></div>`;
   document.body.style.setProperty('background','#2b1f27','important');
   document.documentElement.style.setProperty('background','#2b1f27','important');
-  const d = new Date();
-  document.getElementById('wday').textContent = DAYS[d.getDay()];
-  document.getElementById('wdate').textContent = d.getDate()+' '+MONTHS[d.getMonth()];
-  let current = [];
-  const render = () => {
-    const list = document.getElementById('wlist');
-    if (!current.length){ list.innerHTML = '<div class="wmsg">Niente in programma oggi</div>'; return; }
-    current.sort((a,b)=>String(a.slot||'zz').localeCompare(String(b.slot||'zz')));
-    list.innerHTML = current.map(t => `<div class="wi ${t.done?'done':''}" data-id="${t.id}">
-        <div class="wbox">${t.done?'✓':''}</div>
-        <div class="wtxt">${String(t.title||'').replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}${t.slot?`<span class="wtime">${t.slot}</span>`:''}</div></div>`).join('');
+  document.getElementById('wday').textContent = DAYS[now.getDay()];
+  document.getElementById('wdate').textContent = now.getDate()+' '+MONTHS[now.getMonth()];
+  const esc = t => String(t==null?'':t).replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+  const list = () => document.getElementById('wlist');
+  const msg = t => { list().innerHTML = `<div class="wmsg">${t}</div>`; };
+
+  if (!WCAL){ msg('Apri il link con ?cal=nome-calendario'); return; }
+  // i calendari servono per sapere se è protetto da PIN
+  const cr = await sb.from('calendars').select('*').order('position', {ascending:true});
+  if (!cr.error){ calendars.length = 0; calendars.push(...(cr.data||[]).map(calFromDb)); }
+
+  const showPin = (wrong) => {
+    list().innerHTML = `<div class="wmsg">Calendario protetto${wrong?'<br><b>PIN non valido</b>':''}</div>
+      <div class="wpin"><input id="wpinIn" type="password" inputmode="numeric" placeholder="PIN" autocomplete="off">
+      <button id="wpinOk" class="wbtn">Entra</button></div>`;
+    document.getElementById('wpinOk').onclick = async () => {
+      const v = document.getElementById('wpinIn').value.trim();
+      if (!v) return;
+      setPin(WCAL, v);
+      await refresh(true);
+    };
   };
-  if (!WCAL){ document.getElementById('wlist').innerHTML = '<div class="wmsg">Apri il link con ?cal=nome-calendario</div>'; return; }
-  sb.from('tasks').select('*').eq('calendar_id', WCAL).eq('day', keyToday()).then(({data, error}) => {
-    if (error){ document.getElementById('wlist').innerHTML = '<div class="wmsg">Calendario protetto o non raggiungibile: apri l\'app sul telefono</div>'; return; }
-    current = (data||[]).map(t => ({id:t.id, title:t.title, slot:t.slot, done:!!t.done}));
-    render();
+
+  const render = (today, unsched) => {
+    let h = '';
+    h += today.length
+      ? today.sort((a,b)=>String(a.slot||'zz').localeCompare(String(b.slot||'zz'))).map(t => `
+          <div class="wi ro ${t.done?'done':''}">
+            <div class="wtxt">${esc(t.title)}${t.slot?`<span class="wtime">${esc(t.slot)}</span>`:''}</div></div>`).join('')
+      : '<div class="wmsg">Niente in programma oggi</div>';
+    if (unsched.length){
+      h += `<div class="wsec">Da organizzare</div>` + unsched.map(t => `
+        <div class="wi" data-id="${esc(t.id)}">
+          <div class="wtxt">${esc(t.title)}</div>
+          <div class="wbtns"><button class="wbtn" data-go="today">Oggi</button><button class="wbtn" data-go="tomorrow">Domani</button></div></div>`).join('');
+    }
+    list().innerHTML = h;
+  };
+
+  const refresh = async (fromPin) => {
+    const {data, error} = await dbSelect('tasks', WCAL);
+    if (error){
+      if (isProt(WCAL)){ if (fromPin) dropPin(WCAL); showPin(!!fromPin); return; }
+      msg('Calendario non raggiungibile'); return;
+    }
+    const all = (data||[]).map(t => ({id:t.id, title:t.title, slot:t.slot, done:!!t.done, day:t.day}));
+    const today = all.filter(t => t.day === keyOf(now));
+    const unsched = all.filter(t => !t.day);
+    render(today, unsched);
+    window.__wtasks = all;
+  };
+
+  list().addEventListener('click', async e => {
+    const btn = e.target.closest('[data-go]'); if (!btn) return;
+    const row = btn.closest('.wi'); const id = row && row.dataset.id; if (!id) return;
+    const day = btn.dataset.go === 'today' ? keyOf(now) : keyOf(tomorrow);
+    btn.disabled = true;
+    const {error} = await dbOp(WCAL, 'tasks', 'update', {id, data: {day, slot: null}});
+    if (error){ msg('Spostamento non riuscito, riprova'); return; }
+    await refresh();
   });
-  document.getElementById('wlist').addEventListener('click', e => {
-    const el = e.target.closest('.wi'); if (!el) return;
-    const t = current.find(x => String(x.id) === el.dataset.id); if (!t) return;
-    t.done = !t.done; render();
-    sb.from('tasks').update({done: t.done}).eq('id', t.id).then(({error}) => { if (error){ t.done = !t.done; render(); } });
-  });
+
+  if (isProt(WCAL) && !pinFor(WCAL)){ showPin(false); return; }
+  await refresh();
 }
 async function init(){
   if (isWatch()){ watchMode(); return; }
