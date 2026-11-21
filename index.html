@@ -469,6 +469,22 @@ html[data-style="win95"] ::selection{background:#000080;color:#ffffff}
   .wf .wbtns{display:flex;gap:8px;margin-top:8px}
   .wf .wbtns.center{justify-content:center}
   .wf .wpin input{font-size:20px;width:130px}
+
+  .wf .wsheet{position:absolute;inset:0;background:rgba(43,31,39,.55);align-items:center;justify-content:center;z-index:5;padding:14%}
+  .wf .wsheetBox{background:#fff;border-radius:26px;padding:14px 12px;width:100%;text-align:center;box-shadow:0 8px 0 rgba(90,42,64,.2);max-height:100%;overflow-y:auto}
+  .wf .wsheetT{font-size:22px;font-weight:800;color:var(--fg);margin:4px 0 8px;overflow-wrap:anywhere}
+  .wf .wds{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin:6px 0}
+  .wf .wds .wbtn{font-size:16px;padding:6px 10px}
+  .wf .wsheetBox input{width:100%;font-size:20px;padding:8px;border:2px solid var(--line);border-radius:14px;margin:6px 0}
+  .wf #wnewIn{font-size:20px;padding:6px 8px;border:2px solid var(--line);border-radius:14px;width:60%}
+  .wf .wdow{font-size:22px}
+  .wf .wdate{font-size:40px}
+  .wf .wtab{font-size:18px}
+  .wf .wsec{font-size:22px}
+  .wf .wi{font-size:26px}
+  .wf .wtime{font-size:20px}
+  .wf .wbtn{font-size:20px}
+  .wf .wbtn.big{font-size:22px}
 </style>
 </head>
 <body>
@@ -3802,11 +3818,14 @@ async function watchMode(){
   const WCAL = new URLSearchParams(location.search).get('cal') || '';
   const DAYS = ['domenica','lunedì','martedì','mercoledì','giovedì','venerdì','sabato'];
   const MONTHS = ['gennaio','febbraio','marzo','aprile','maggio','giugno','luglio','agosto','settembre','ottobre','novembre','dicembre'];
+  const WD = [[1,'Lun'],[2,'Mar'],[3,'Mer'],[4,'Gio'],[5,'Ven'],[6,'Sab'],[0,'Dom']];
   const PAL = ['#ffd6e7','#d6eeff','#dff5d8','#fff0c2','#e6dcff','#ffe0cc'];
   const pad = n => String(n).padStart(2,'0');
   const keyOf = d => d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
   const addDays = (d,n) => new Date(d.getFullYear(), d.getMonth(), d.getDate()+n);
+  const nextOn = w => { const d = new Date(); d.setHours(0,0,0,0); return addDays(d, (w - d.getDay() + 7) % 7); };
   const esc = t => String(t==null?'':t).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const norm = t => String(t||'').toLowerCase().replace(/\s+/g,'');
   let viewDate = new Date(); viewDate.setHours(0,0,0,0);
   let tab = 'giorno', picking = false;
   let tasks = [], protos = [];
@@ -3817,21 +3836,35 @@ async function watchMode(){
       <button class="wtab" data-tab="org">Da organizzare</button>
     </div>
     <div id="wbody"><div class="wmsg">Caricamento…</div></div>
+    <div id="wsheet" class="wsheet" style="display:none"></div>
   </div>`;
   document.body.style.setProperty('background','#2b1f27','important');
   document.documentElement.style.setProperty('background','#2b1f27','important');
   const body = () => document.getElementById('wbody');
+  const sheetEl = () => document.getElementById('wsheet');
+  const openSheet = html => { sheetEl().innerHTML = html; sheetEl().style.display = 'flex'; };
+  const closeSheet = () => { sheetEl().style.display = 'none'; sheetEl().innerHTML = ''; };
   const msg = t => { body().innerHTML = `<div class="wmsg">${t}</div>`; };
 
-  // calendari (per il PIN e per la scelta)
-  const cr = await sb.from('calendars').select('*').order('position', {ascending:true});
+  // calendari del laboratorio 47 (gruppo il cui nome contiene "lab 47")
+  const [cr, gr] = await Promise.all([
+    sb.from('calendars').select('*').order('position', {ascending:true}),
+    sb.from('groups').select('*').order('position', {ascending:true})
+  ]);
   if (!cr.error){ calendars.length = 0; calendars.push(...(cr.data||[]).map(calFromDb)); }
+  const groups = gr.error ? [] : (gr.data||[]);
+  const labIds = groups.filter(g => norm(g.name).includes('lab47')).map(g => g.id);
+  // includo anche i sottogruppi del lab 47
+  let grew = true;
+  while (grew){ grew = false; groups.forEach(g => { if (g.parent_id && labIds.includes(g.parent_id) && !labIds.includes(g.id)){ labIds.push(g.id); grew = true; } }); }
+  const labCals = calendars.filter(c => labIds.includes(c.groupId));
 
   if (!WCAL){
     document.querySelector('.wtabs').style.display = 'none';
-    const vis = calendars.filter(c => !c.hidden);
-    body().innerHTML = '<div class="wsec">Scegli un calendario</div>' + (vis.length
-      ? vis.map(c => `<div class="wi" data-cal="${esc(c.id)}"><div class="wtxt">${esc(c.name)}${c.protected?' 🔒':''}</div></div>`).join('')
+    const vis = (labCals.length ? labCals : calendars).filter(c => !c.hidden);
+    const nota = labCals.length ? '' : '<div class="wmsg">Nessun gruppo "lab 47" trovato: mostro tutti</div>';
+    body().innerHTML = '<div class="wsec">Scegli un calendario</div>' + nota + (vis.length
+      ? vis.map(c => `<div class="wi" data-cal="${esc(c.id)}"><div class="wtxt">${esc(c.name)}${c.protected?' (PIN)':''}</div></div>`).join('')
       : '<div class="wmsg">Nessun calendario</div>');
     body().addEventListener('click', e => {
       const el = e.target.closest('[data-cal]'); if (!el) return;
@@ -3861,13 +3894,12 @@ async function watchMode(){
       const items = dayItems();
       body().innerHTML = `<div class="wnav"><div class="wdow">${DAYS[viewDate.getDay()]}</div>
           <div class="wdate">${viewDate.getDate()} ${MONTHS[viewDate.getMonth()]}</div></div>
-        <div class="wdots">scorri per cambiare giorno</div>` +
-        (items.length ? items.map((t,i) => `<div class="wi ro" style="background:${PAL[i%PAL.length]}">
+        <div class="wdots">scorri · tieni premuto per modificare</div>` +
+        (items.length ? items.map((t,i) => `<div class="wi ro" data-id="${esc(t.id)}" style="background:${PAL[i%PAL.length]}">
             <div class="wtxt">${esc(t.title)}${t.slot?`<span class="wtime">${esc(t.slot)}</span>`:''}</div></div>`).join('')
           : '<div class="wmsg">Niente in programma</div>');
       return;
     }
-    // tab "Da organizzare"
     if (picking){
       const q = protos.length ? protos.map((p,i) => `<div class="wi" style="background:${PAL[i%PAL.length]}" data-addp="${esc(p.id)}"><div class="wtxt">${esc(p.title)}</div></div>`).join('')
         : '<div class="wmsg">Nessun protocollo</div>';
@@ -3875,10 +3907,12 @@ async function watchMode(){
       return;
     }
     const un = tasks.filter(t => !t.day);
-    body().innerHTML = `<div class="wbtns center"><button class="wbtn big" data-pick="1">+ Protocollo</button></div>` +
-      (un.length ? un.map((t,i) => `<div class="wi" style="background:${PAL[i%PAL.length]}" data-id="${esc(t.id)}">
-          <div class="wtxt">${esc(t.title)}</div>
-          <div class="wbtns"><button class="wbtn" data-go="today">Oggi</button><button class="wbtn" data-go="tomorrow">Domani</button></div></div>`).join('')
+    body().innerHTML = `<div class="wbtns center">
+        <button class="wbtn big" data-pick="1">+ Protocollo</button>
+        <button class="wbtn big" data-newf="1">+ Aggiungi</button></div>
+      <div id="wnewbox" style="display:none" class="wbtns center"><input id="wnewIn" placeholder="Nome attività" maxlength="120"><button class="wbtn" data-newok="1">OK</button></div>` +
+      (un.length ? un.map((t,i) => `<div class="wi" style="background:${PAL[i%PAL.length]}" data-id="${esc(t.id)}" data-org="1">
+          <div class="wtxt">${esc(t.title)}</div></div>`).join('')
         : '<div class="wmsg">Niente da organizzare</div>');
   };
 
@@ -3895,15 +3929,88 @@ async function watchMode(){
     draw();
   };
 
-  // schede in alto
+  const find = id => tasks.find(t => String(t.id) === String(id));
+  const sheetTitle = t => `<div class="wsheetT">${esc(t.title)}</div>`;
+  const actionsSheet = (t, mode) => {
+    const wd = mode === 'org' ? `<div class="wdsWrap"><div class="wsec">Metti in</div><div class="wds">${WD.map(([w,l]) => `<button class="wbtn" data-wd="${w}" data-id="${esc(t.id)}">${l}</button>`).join('')}</div></div>` : '';
+    openSheet(`<div class="wsheetBox">${sheetTitle(t)}${wd}
+      <div class="wbtns center"><button class="wbtn big" data-edit="${esc(t.id)}">Modifica</button><button class="wbtn big" data-del="${esc(t.id)}">Elimina</button></div>
+      <div class="wbtns center"><button class="wbtn" data-close="1">Chiudi</button></div></div>`);
+  };
+  const editSheet = t => openSheet(`<div class="wsheetBox"><div class="wsec">Modifica</div>
+      <input id="wedit" value="${esc(t.title)}" maxlength="160">
+      <div class="wbtns center"><button class="wbtn big" data-save="${esc(t.id)}">Salva</button><button class="wbtn" data-close="1">Annulla</button></div></div>`);
+  const delSheet = t => openSheet(`<div class="wsheetBox"><div class="wsec">Eliminare?</div>
+      <div class="wsheetT">${esc(t.title)}</div>
+      <div class="wbtns center"><button class="wbtn big" data-delyes="${esc(t.id)}">Sì, elimina</button><button class="wbtn" data-close="1">No</button></div></div>`);
+
+  // tieni premuto un evento del giorno: modifica o elimina
+  let pressTimer = null, pressFired = false, sx = null, sy = null;
+  body().addEventListener('touchstart', e => {
+    sx = e.touches[0].clientX; sy = e.touches[0].clientY; pressFired = false;
+    const row = e.target.closest('.wi[data-id]');
+    if (tab === 'giorno' && row){
+      clearTimeout(pressTimer);
+      pressTimer = setTimeout(() => { pressFired = true; const t = find(row.dataset.id); if (t) actionsSheet(t, 'day'); }, 500);
+    }
+  }, {passive:true});
+  body().addEventListener('touchmove', e => {
+    if (sx !== null && (Math.abs(e.touches[0].clientX - sx) > 10 || Math.abs(e.touches[0].clientY - sy) > 10)) clearTimeout(pressTimer);
+  }, {passive:true});
+  body().addEventListener('touchend', e => {
+    clearTimeout(pressTimer);
+    if (pressFired){ pressFired = false; sx = null; return; }
+    if (sx === null || tab !== 'giorno') { sx = null; return; }
+    const dx = e.changedTouches[0].clientX - sx, dy = e.changedTouches[0].clientY - sy; sx = null;
+    if (Math.abs(dx) > 35 && Math.abs(dx) > Math.abs(dy) * 1.2){ viewDate = addDays(viewDate, dx < 0 ? 1 : -1); draw(); }
+  }, {passive:true});
+
+  // schede
   document.querySelector('.wf').addEventListener('click', async e => {
     const tb = e.target.closest('.wtab');
     if (tb){ tab = tb.dataset.tab; picking = false; draw(); return; }
+    // finestra di azioni, modifica ed eliminazione
+    const t = (id) => find(id);
+    if (e.target.closest('[data-close]')){ closeSheet(); return; }
+    const ed = e.target.closest('[data-edit]'); if (ed){ const x = t(ed.dataset.edit); if (x) editSheet(x); return; }
+    const dl = e.target.closest('[data-del]'); if (dl){ const x = t(dl.dataset.del); if (x) delSheet(x); return; }
+    const sv = e.target.closest('[data-save]');
+    if (sv){
+      const v = document.getElementById('wedit').value.trim(); if (!v) return;
+      closeSheet();
+      const {error} = await dbOp(WCAL, 'tasks', 'update', {id: sv.dataset.save, data: {title: v}});
+      if (error){ msg('Modifica non salvata, riprova'); return; }
+      await load(); return;
+    }
+    const dy = e.target.closest('[data-delyes]');
+    if (dy){
+      closeSheet();
+      const {error} = await dbOp(WCAL, 'tasks', 'delete', {id: dy.dataset.delyes});
+      if (error){ msg('Eliminazione non riuscita, riprova'); return; }
+      await load(); return;
+    }
+    const wd = e.target.closest('[data-wd]');
+    if (wd){
+      const day = keyOf(nextOn(+wd.dataset.wd));
+      closeSheet();
+      const {error} = await dbOp(WCAL, 'tasks', 'update', {id: wd.dataset.id, data: {day, slot: null}});
+      if (error){ msg('Spostamento non riuscito, riprova'); return; }
+      await load(); return;
+    }
   });
-  // azioni nelle schede
+
+  // azioni nella scheda Da organizzare
   body().addEventListener('click', async e => {
     if (e.target.closest('[data-pick]')){ picking = true; draw(); return; }
     if (e.target.closest('[data-back]')){ picking = false; draw(); return; }
+    if (e.target.closest('[data-newf]')){ const bx = document.getElementById('wnewbox'); if (bx){ bx.style.display = ''; document.getElementById('wnewIn').focus(); } return; }
+    if (e.target.closest('[data-newok]')){
+      const v = document.getElementById('wnewIn').value.trim(); if (!v) return;
+      const row = {id: crypto.randomUUID(), title: v, day: null, slot: null, done: false, category: null, kind: null, created_at: Date.now(), calendar_id: WCAL};
+      const {error} = await dbOp(WCAL, 'tasks', 'insert', {data: row});
+      if (error){ msg('Non aggiunta, riprova'); return; }
+      await load(); return;
+    }
     const addp = e.target.closest('[data-addp]');
     if (addp){
       const p = protos.find(x => x.id === addp.dataset.addp); if (!p) return;
@@ -3914,26 +4021,9 @@ async function watchMode(){
       if (error){ msg('Non aggiunto, riprova'); return; }
       await load(); return;
     }
-    const go = e.target.closest('[data-go]');
-    if (go){
-      const row = go.closest('[data-id]'); if (!row) return;
-      const day = go.dataset.go === 'today' ? keyOf(new Date()) : keyOf(addDays(new Date(), 1));
-      go.disabled = true;
-      const {error} = await dbOp(WCAL, 'tasks', 'update', {id: row.dataset.id, data: {day, slot: null}});
-      if (error){ msg('Spostamento non riuscito, riprova'); return; }
-      await load(); return;
-    }
+    const org = e.target.closest('[data-org]');
+    if (org){ const x = find(org.dataset.id); if (x) actionsSheet(x, 'org'); return; }
   });
-  // scorrimento orizzontale: cambia giorno nella scheda Giorno
-  let sx = null, sy = null;
-  body().addEventListener('touchstart', e => { sx = e.touches[0].clientX; sy = e.touches[0].clientY; }, {passive:true});
-  body().addEventListener('touchend', e => {
-    if (sx === null || tab !== 'giorno') { sx = null; return; }
-    const dx = e.changedTouches[0].clientX - sx, dy = e.changedTouches[0].clientY - sy; sx = null;
-    if (Math.abs(dx) > 35 && Math.abs(dx) > Math.abs(dy) * 1.2){
-      viewDate = addDays(viewDate, dx < 0 ? 1 : -1); draw();
-    }
-  }, {passive:true});
 
   if (isProt(WCAL) && !pinFor(WCAL)){ showPin(false); return; }
   await load();
