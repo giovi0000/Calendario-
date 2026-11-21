@@ -3795,10 +3795,21 @@ async function watchMode(){
   const list = () => document.getElementById('wlist');
   const msg = t => { list().innerHTML = `<div class="wmsg">${t}</div>`; };
 
-  if (!WCAL){ msg('Apri il link con ?cal=nome-calendario'); return; }
-  // i calendari servono per sapere se è protetto da PIN
+  // i calendari servono per sapere se è protetto da PIN e per l'elenco di scelta
   const cr = await sb.from('calendars').select('*').order('position', {ascending:true});
   if (!cr.error){ calendars.length = 0; calendars.push(...(cr.data||[]).map(calFromDb)); }
+  if (!WCAL){
+    const visibili = calendars.filter(c => !c.hidden);
+    list().innerHTML = '<div class="wsec">Scegli un calendario</div>' + (visibili.length
+      ? visibili.map(c => `<div class="wi ro" data-cal="${esc(c.id)}"><div class="wtxt">${esc(c.name)}${c.protected?' 🔒':''}</div></div>`).join('')
+      : '<div class="wmsg">Nessun calendario trovato</div>');
+    list().addEventListener('click', e => {
+      const el = e.target.closest('[data-cal]'); if (!el) return;
+      const u = new URL(location.href); u.searchParams.set('cal', el.dataset.cal); u.searchParams.set('orologio', '');
+      location.href = u.toString();
+    });
+    return;
+  }
 
   const showPin = (wrong) => {
     list().innerHTML = `<div class="wmsg">Calendario protetto${wrong?'<br><b>PIN non valido</b>':''}</div>
