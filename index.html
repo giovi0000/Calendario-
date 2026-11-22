@@ -497,6 +497,9 @@ html[data-style="win95"] ::selection{background:#000080;color:#ffffff}
 
   .wf .wstep.done{text-decoration:line-through;color:var(--muted)}
   .wf .wmini{font-size:12px;color:var(--muted);text-align:center;margin-bottom:4px}
+
+  .wf #wbody{min-height:0;flex:1 1 auto;overflow-y:auto}
+  .wf .wpage{padding-bottom:12px}
 </style>
 </head>
 <body>
@@ -3957,8 +3960,10 @@ async function watchMode(){
       <div class="wsheetT">${esc(t.title)}</div>
       <div class="wbtns center"><button class="wbtn big" data-delyes="${esc(t.id)}">Sì, elimina</button><button class="wbtn" data-close="1">No</button></div></div>`);
 
-  // visualizzatore del protocollo: un passaggio alla volta, timer avviato a mano
-  let vw = null;   // {p, steps, i, left, running, started, iv}
+  // ---- pagina del protocollo: un passaggio alla volta, timer avviato a mano ----
+  let vw = null;     // {p, steps, taskId, i, done, running, started, left, endAt, iv}
+  let actx = null;   // audio per il suono di fine timer (sbloccato dal tocco su Avvia)
+  let stepTap = 0;
   const parseDur = txt => {
     const m = String(txt||'').match(/(\d+(?:[.,]\d+)?)\s*(ore?|h|minut[oi]?|min|m|secondi?|sec|s)\b/i);
     if (!m) return 0;
@@ -3968,53 +3973,78 @@ async function watchMode(){
     return Math.round(n*60);
   };
   const fmtT = sec => pad(Math.floor(sec/60)) + ':' + pad(sec%60);
-  const viewerHTML = () => {
-    const txt = vw.steps[vw.i] || '';
-    const dur = parseDur(txt);
-    let timer = '';
-    if (dur){
-      if (vw.running) timer = `<div class="wtimer">${fmtT(vw.left)}</div><div class="wmini">tieni lo schermo acceso</div><div class="wbtns center"><button class="wbtn big" data-tstop="1">Ferma</button></div>`;
-      else if (vw.started && vw.left === 0) timer = `<div class="wtimer done">Fatto!</div><div class="wbtns center"><button class="wbtn big" data-tstart="${dur}">Ricomincia</button></div>`;
-      else timer = `<div class="wbtns center"><button class="wbtn big" data-tstart="${dur}">Timer ${fmtT(dur)}</button></div>`;
-    }
-    return `<div class="wsheetBox">
-      <div class="wsheetT small">${esc(vw.p.title)}</div>
-      <div class="wsec">Passo ${vw.i+1} di ${vw.steps.length}${vw.done.has(vw.i)?' · fatto':''}</div>
-      <div class="wstep ${vw.done.has(vw.i)?'done':''}" data-stepdone="1">${esc(txt)}</div>
-      <div class="wmini">doppio tocco sul testo per spuntare</div>
-      ${timer}
-      <div class="wbtns center">
-        <button class="wbtn big" data-prev="1" ${vw.i===0?'disabled':''}>Indietro</button>
-        <button class="wbtn big" data-next="1" ${vw.i>=vw.steps.length-1?'disabled':''}>Avanti</button></div>
-      <div class="wbtns center"><button class="wbtn" data-restart="1">Dall'inizio</button><button class="wbtn" data-close="1">Chiudi</button></div></div>`;
-  };
   const progKey = id => 'wprog:' + WCAL + ':' + id;
   const saveProg = () => { if (!vw) return; try { localStorage.setItem(progKey(vw.taskId), JSON.stringify({i: vw.i, done: [...vw.done]})); } catch(_) {} };
   const loadProg = id => { try { return JSON.parse(localStorage.getItem(progKey(id)) || 'null') || {}; } catch(_) { return {}; } };
   // schermo acceso mentre il timer gira (se il sistema lo permette)
   let wakeLock = null;
   const keepScreenOn = async () => { try { if ('wakeLock' in navigator && !wakeLock) wakeLock = await navigator.wakeLock.request('screen'); } catch(_) {} };
-  const releaseScreen = () => { try { if (wakeLock){ wakeLock.release(); } } catch(_) {} wakeLock = null; };
-  const stopTimer = () => { if (vw && vw.iv){ clearInterval(vw.iv); vw.iv = null; } if (vw){ vw.running = false; } releaseScreen(); };
-  const timerEnd = () => {
-    if (!vw) return;
-    stopTimer(); vw.left = 0;
-    if (navigator.vibrate) navigator.vibrate([400,200,400]);
-    if ('Notification' in window && Notification.permission === 'granted'){
-      try { new Notification('Timer finito', {body: vw.steps[vw.i] || vw.p.title}); } catch(_) {}
-    }
+  const releaseScreen = () => { try { if (wakeLock) wakeLock.release(); } catch(_) {} wakeLock = null; };
+  const beep = () => {
+    try {
+      if (!actx) return;
+      [0, 0.5, 1].forEach(off => {
+        const o = actx.createOscillator(), g = actx.createGain();
+        o.frequency.value = 880; o.connect(g); g.connect(actx.destination);
+        g.gain.setValueAtTime(0.3, actx.currentTime + off);
+        g.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + off + 0.4);
+        o.start(actx.currentTime + off); o.stop(actx.currentTime + off + 0.42);
+      });
+    } catch(_) {}
   };
-  // il tempo si calcola dall'orario di fine: anche se la pagina è stata sospesa resta giusto
+  const buzz = () => { try { if (navigator.vibrate) navigator.vibrate([500, 250, 500, 250, 500]); } catch(_) {} beep(); };
+  const stopTimer = () => { if (vw && vw.iv){ clearInterval(vw.iv); vw.iv = null; } if (vw) vw.running = false; releaseScreen(); };
+  const viewerHTML = () => {
+    const txt = vw.steps[vw.i] || '';
+    const dur = parseDur(txt);
+    const fatto = vw.done.has(vw.i);
+    let timer = '';
+    if (dur){
+      if (vw.running) timer = `<div class="wtimer" id="wtimerVal">${fmtT(vw.left)}</div><div class="wmini">tieni lo schermo acceso</div>
+          <div class="wbtns center"><button class="wbtn big" data-tstop="1">Ferma</button></div>`;
+      else if (vw.started && vw.left === 0) timer = `<div class="wtimer done">Fatto!</div>
+          <div class="wbtns center"><button class="wbtn big" data-tstart="${dur}">Ricomincia</button></div>`;
+      else timer = `<div class="wbtns center"><button class="wbtn big" data-tstart="${dur}">Avvia timer ${fmtT(dur)}</button></div>`;
+    }
+    return `<div class="wpage">
+      <div class="wbtns center"><button class="wbtn" data-vback="1">← Lista</button></div>
+      <div class="wsheetT small">${esc(vw.p.title)}</div>
+      <div class="wsec">Passo ${vw.i+1} di ${vw.steps.length}${fatto?' · fatto':''}</div>
+      <div class="wstep ${fatto?'done':''}" data-stepdone="1">${esc(txt)}</div>
+      <div class="wmini">doppio tocco sul testo per spuntare</div>
+      ${timer}
+      <div class="wbtns center">
+        <button class="wbtn big" data-prev="1" ${vw.i===0?'disabled':''}>Indietro</button>
+        <button class="wbtn big" data-next="1" ${vw.i>=vw.steps.length-1?'disabled':''}>Avanti</button></div>
+      <div class="wbtns center"><button class="wbtn" data-restart="1">Dall'inizio</button></div>
+    </div>`;
+  };
+  // ridisegna la pagina senza perdere la posizione di scorrimento
+  const viewPage = () => {
+    if (!vw) return;
+    const y = body().scrollTop;
+    body().innerHTML = viewerHTML();
+    body().scrollTop = y;
+  };
+  const redrawViewer = viewPage;
   const tick = () => {
     if (!vw || !vw.running) return;
     vw.left = Math.max(0, Math.round((vw.endAt - Date.now()) / 1000));
-    if (vw.left <= 0){ timerEnd(); }
-    redrawViewer();
+    if (vw.left <= 0){ timerEnd(); return; }
+    const el = document.getElementById('wtimerVal'); if (el) el.textContent = fmtT(vw.left);
   };
+  const timerEnd = () => {
+    if (!vw) return;
+    stopTimer(); vw.left = 0; buzz();
+    if ('Notification' in window && Notification.permission === 'granted'){
+      try { new Notification('Timer finito', {body: vw.steps[vw.i] || vw.p.title}); } catch(_) {}
+    }
+    viewPage();
+  };
+  // quando torni sulla pagina il tempo si ricalcola dall'orario di fine
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && vw && vw.running){ keepScreenOn(); tick(); }
   });
-  const redrawViewer = () => { if (vw) openSheet(viewerHTML()); };
   const openViewer = t => {
     const p = protos.find(x => x.id === String(t.kind).slice(6));
     const steps = p ? (parseRecipe(p.recipe).steps || []).map(x => x.text).filter(Boolean) : [];
@@ -4022,37 +4052,47 @@ async function watchMode(){
     stopTimer();
     const sv = loadProg(t.id);
     const i0 = Math.min(Math.max(+sv.i || 0, 0), steps.length - 1);
-    vw = {p, steps, taskId: t.id, i: i0, done: new Set((sv.done || []).filter(x => x < steps.length)), left: 0, running: false, started: false, iv: null};
-    redrawViewer();
+    vw = {p, steps, taskId: t.id, i: i0, done: new Set((sv.done || []).filter(x => x < steps.length)),
+          left: 0, running: false, started: false, endAt: 0, iv: null};
+    document.querySelector('.wtabs').style.display = 'none';
+    body().scrollTop = 0;
+    viewPage();
+  };
+  const closeViewer = () => {
+    stopTimer(); vw = null;
+    document.querySelector('.wtabs').style.display = '';
+    draw();
   };
   const startTimer = sec => {
-    if (!vw) return; stopTimer();
-    vw.left = sec; vw.running = true; vw.started = true; vw.endAt = Date.now() + sec * 1000;
-    // permesso per la notifica di fine timer (chiesto con il tocco su Avvia)
+    if (!vw) return;
+    stopTimer();
+    // il suono va sbloccato con un tocco: qui siamo dentro il tocco su Avvia
+    if (!actx){ try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch(_) {} }
+    if (actx && actx.state === 'suspended'){ actx.resume().catch(() => {}); }
     if ('Notification' in window && Notification.permission === 'default'){ try { Notification.requestPermission(); } catch(_) {} }
+    vw.left = sec; vw.running = true; vw.started = true; vw.endAt = Date.now() + sec * 1000;
     keepScreenOn();
     vw.iv = setInterval(tick, 1000);
-    redrawViewer();
+    viewPage();
   };
-  // doppio tocco sul testo del passaggio: spunta o togli la spunta
-  let stepTap = 0;
-  sheetEl().addEventListener('touchend', e => {
-    if (!vw || !e.target.closest('[data-stepdone]')) return;
-    const now = Date.now();
-    if (now - stepTap < 350){ stepTap = 0; if (vw.done.has(vw.i)) vw.done.delete(vw.i); else vw.done.add(vw.i); saveProg(); redrawViewer(); }
-    else stepTap = now;
-  }, {passive:true});
-  // scorrimento orizzontale per passare da un passaggio all'altro
-  let vx = null;
-  sheetEl().addEventListener('touchstart', e => { if (vw) vx = e.touches[0].clientX; }, {passive:true});
-  sheetEl().addEventListener('touchend', e => {
-    if (!vw || vx === null) return;
-    const dx = e.changedTouches[0].clientX - vx; vx = null;
-    if (Math.abs(dx) < 40) return;
-    const next = dx < 0 ? vw.i + 1 : vw.i - 1;
-    if (next < 0 || next >= vw.steps.length) return;
-    stopTimer(); vw.i = next; vw.left = 0; vw.started = false; saveProg(); redrawViewer();
-  }, {passive:true});
+  // tocchi nella pagina del protocollo: scorrimento tra passaggi e doppio tocco per spuntare
+  const viewerTouchEnd = e => {
+    if (sx === null) return;
+    const dx = e.changedTouches[0].clientX - sx, dy = e.changedTouches[0].clientY - sy;
+    const moved = Math.abs(dx) > 12 || Math.abs(dy) > 12; sx = null;
+    if (!moved){
+      if (e.target.closest('[data-stepdone]')){
+        const now = Date.now();
+        if (now - stepTap < 350){ stepTap = 0; if (vw.done.has(vw.i)) vw.done.delete(vw.i); else vw.done.add(vw.i); saveProg(); viewPage(); }
+        else stepTap = now;
+      }
+      return;
+    }
+    if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5){
+      const next = dx < 0 ? vw.i + 1 : vw.i - 1;
+      if (next >= 0 && next < vw.steps.length){ stopTimer(); vw.i = next; vw.left = 0; vw.started = false; saveProg(); viewPage(); }
+    }
+  };
 
   // tieni premuto un evento del giorno: modifica o elimina
   let pressTimer = null, pressFired = false, sx = null, sy = null, startRow = null;
@@ -4075,6 +4115,7 @@ async function watchMode(){
     dbOp(WCAL, 'tasks', 'update', {id: t.id, data: {done: t.done}}).then(({error}) => { if (error){ t.done = !t.done; draw(); } });
   };
   body().addEventListener('touchend', e => {
+    if (vw){ viewerTouchEnd(e); return; }
     clearTimeout(pressTimer);
     if (pressFired){ pressFired = false; sx = null; return; }
     if (sx === null) return;
@@ -4110,6 +4151,7 @@ async function watchMode(){
       await load(); return;
     }
     if (vw){
+      if (e.target.closest('[data-vback]')){ closeViewer(); return; }
       if (e.target.closest('[data-next]')){ stopTimer(); vw.i = Math.min(vw.i+1, vw.steps.length-1); vw.left = 0; vw.started = false; saveProg(); redrawViewer(); return; }
       if (e.target.closest('[data-prev]')){ stopTimer(); vw.i = Math.max(vw.i-1, 0); vw.left = 0; vw.started = false; saveProg(); redrawViewer(); return; }
       if (e.target.closest('[data-restart]')){ stopTimer(); vw.i = 0; vw.done = new Set(); vw.left = 0; vw.started = false; saveProg(); redrawViewer(); return; }
