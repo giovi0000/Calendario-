@@ -485,6 +485,18 @@ html[data-style="win95"] ::selection{background:#000080;color:#ffffff}
   .wf .wtime{font-size:20px}
   .wf .wbtn{font-size:20px}
   .wf .wbtn.big{font-size:22px}
+
+  .wf .wstep{font-size:24px;font-weight:700;line-height:1.35;text-align:left;color:var(--fg);margin:8px 2px;overflow-wrap:anywhere}
+  .wf .wtimer{font-size:44px;font-weight:900;color:var(--accent);margin:6px 0}
+  .wf .wtimer.done{font-size:30px}
+  .wf .wsheetT.small{font-size:18px;color:var(--muted)}
+
+  .wf .wi.done .wtxt{text-decoration:line-through;color:var(--muted)}
+  .wf .wck{flex:0 0 30px;height:30px;border:3px solid var(--accent);border-radius:9px;display:inline-flex;align-items:center;justify-content:center;font-size:20px;color:#fff;margin-right:10px;vertical-align:middle}
+  .wf .wi.done .wck{background:var(--accent)}
+
+  .wf .wstep.done{text-decoration:line-through;color:var(--muted)}
+  .wf .wmini{font-size:12px;color:var(--muted);text-align:center;margin-bottom:4px}
 </style>
 </head>
 <body>
@@ -3843,7 +3855,7 @@ async function watchMode(){
   const body = () => document.getElementById('wbody');
   const sheetEl = () => document.getElementById('wsheet');
   const openSheet = html => { sheetEl().innerHTML = html; sheetEl().style.display = 'flex'; };
-  const closeSheet = () => { sheetEl().style.display = 'none'; sheetEl().innerHTML = ''; };
+  const closeSheet = () => { if (typeof vw !== 'undefined' && vw){ if (vw.iv) clearInterval(vw.iv); vw = null; } sheetEl().style.display = 'none'; sheetEl().innerHTML = ''; };
   const msg = t => { body().innerHTML = `<div class="wmsg">${t}</div>`; };
 
   // calendari del laboratorio 47 (gruppo il cui nome contiene "lab 47")
@@ -3895,7 +3907,8 @@ async function watchMode(){
       body().innerHTML = `<div class="wnav"><div class="wdow">${DAYS[viewDate.getDay()]}</div>
           <div class="wdate">${viewDate.getDate()} ${MONTHS[viewDate.getMonth()]}</div></div>
         <div class="wdots">scorri · tieni premuto per modificare</div>` +
-        (items.length ? items.map((t,i) => `<div class="wi ro" data-id="${esc(t.id)}" style="background:${PAL[i%PAL.length]}">
+        (items.length ? items.map((t,i) => `<div class="wi ro ${t.done?'done':''}" data-id="${esc(t.id)}" style="background:${t.done?'#e4f0df':PAL[i%PAL.length]}">
+            <span class="wck">${t.done?'✓':''}</span>
             <div class="wtxt">${esc(t.title)}${t.slot?`<span class="wtime">${esc(t.slot)}</span>`:''}</div></div>`).join('')
           : '<div class="wmsg">Niente in programma</div>');
       return;
@@ -3944,10 +3957,108 @@ async function watchMode(){
       <div class="wsheetT">${esc(t.title)}</div>
       <div class="wbtns center"><button class="wbtn big" data-delyes="${esc(t.id)}">Sì, elimina</button><button class="wbtn" data-close="1">No</button></div></div>`);
 
+  // visualizzatore del protocollo: un passaggio alla volta, timer avviato a mano
+  let vw = null;   // {p, steps, i, left, running, started, iv}
+  const parseDur = txt => {
+    const m = String(txt||'').match(/(\d+(?:[.,]\d+)?)\s*(ore?|h|minut[oi]?|min|m|secondi?|sec|s)\b/i);
+    if (!m) return 0;
+    const n = parseFloat(m[1].replace(',', '.')); const u = m[2].toLowerCase();
+    if (u.startsWith('or') || u === 'h') return Math.round(n*3600);
+    if (u.startsWith('sec') || u === 's' || u.startsWith('secondo')) return Math.round(n);
+    return Math.round(n*60);
+  };
+  const fmtT = sec => pad(Math.floor(sec/60)) + ':' + pad(sec%60);
+  const viewerHTML = () => {
+    const txt = vw.steps[vw.i] || '';
+    const dur = parseDur(txt);
+    let timer = '';
+    if (dur){
+      if (vw.running) timer = `<div class="wtimer">${fmtT(vw.left)}</div><div class="wmini">tieni lo schermo acceso</div><div class="wbtns center"><button class="wbtn big" data-tstop="1">Ferma</button></div>`;
+      else if (vw.started && vw.left === 0) timer = `<div class="wtimer done">Fatto!</div><div class="wbtns center"><button class="wbtn big" data-tstart="${dur}">Ricomincia</button></div>`;
+      else timer = `<div class="wbtns center"><button class="wbtn big" data-tstart="${dur}">Timer ${fmtT(dur)}</button></div>`;
+    }
+    return `<div class="wsheetBox">
+      <div class="wsheetT small">${esc(vw.p.title)}</div>
+      <div class="wsec">Passo ${vw.i+1} di ${vw.steps.length}${vw.done.has(vw.i)?' · fatto':''}</div>
+      <div class="wstep ${vw.done.has(vw.i)?'done':''}" data-stepdone="1">${esc(txt)}</div>
+      <div class="wmini">doppio tocco sul testo per spuntare</div>
+      ${timer}
+      <div class="wbtns center">
+        <button class="wbtn big" data-prev="1" ${vw.i===0?'disabled':''}>Indietro</button>
+        <button class="wbtn big" data-next="1" ${vw.i>=vw.steps.length-1?'disabled':''}>Avanti</button></div>
+      <div class="wbtns center"><button class="wbtn" data-restart="1">Dall'inizio</button><button class="wbtn" data-close="1">Chiudi</button></div></div>`;
+  };
+  const progKey = id => 'wprog:' + WCAL + ':' + id;
+  const saveProg = () => { if (!vw) return; try { localStorage.setItem(progKey(vw.taskId), JSON.stringify({i: vw.i, done: [...vw.done]})); } catch(_) {} };
+  const loadProg = id => { try { return JSON.parse(localStorage.getItem(progKey(id)) || 'null') || {}; } catch(_) { return {}; } };
+  // schermo acceso mentre il timer gira (se il sistema lo permette)
+  let wakeLock = null;
+  const keepScreenOn = async () => { try { if ('wakeLock' in navigator && !wakeLock) wakeLock = await navigator.wakeLock.request('screen'); } catch(_) {} };
+  const releaseScreen = () => { try { if (wakeLock){ wakeLock.release(); } } catch(_) {} wakeLock = null; };
+  const stopTimer = () => { if (vw && vw.iv){ clearInterval(vw.iv); vw.iv = null; } if (vw){ vw.running = false; } releaseScreen(); };
+  const timerEnd = () => {
+    if (!vw) return;
+    stopTimer(); vw.left = 0;
+    if (navigator.vibrate) navigator.vibrate([400,200,400]);
+    if ('Notification' in window && Notification.permission === 'granted'){
+      try { new Notification('Timer finito', {body: vw.steps[vw.i] || vw.p.title}); } catch(_) {}
+    }
+  };
+  // il tempo si calcola dall'orario di fine: anche se la pagina è stata sospesa resta giusto
+  const tick = () => {
+    if (!vw || !vw.running) return;
+    vw.left = Math.max(0, Math.round((vw.endAt - Date.now()) / 1000));
+    if (vw.left <= 0){ timerEnd(); }
+    redrawViewer();
+  };
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && vw && vw.running){ keepScreenOn(); tick(); }
+  });
+  const redrawViewer = () => { if (vw) openSheet(viewerHTML()); };
+  const openViewer = t => {
+    const p = protos.find(x => x.id === String(t.kind).slice(6));
+    const steps = p ? (parseRecipe(p.recipe).steps || []).map(x => x.text).filter(Boolean) : [];
+    if (!p || !steps.length){ msg('Questo protocollo non ha passaggi'); return; }
+    stopTimer();
+    const sv = loadProg(t.id);
+    const i0 = Math.min(Math.max(+sv.i || 0, 0), steps.length - 1);
+    vw = {p, steps, taskId: t.id, i: i0, done: new Set((sv.done || []).filter(x => x < steps.length)), left: 0, running: false, started: false, iv: null};
+    redrawViewer();
+  };
+  const startTimer = sec => {
+    if (!vw) return; stopTimer();
+    vw.left = sec; vw.running = true; vw.started = true; vw.endAt = Date.now() + sec * 1000;
+    // permesso per la notifica di fine timer (chiesto con il tocco su Avvia)
+    if ('Notification' in window && Notification.permission === 'default'){ try { Notification.requestPermission(); } catch(_) {} }
+    keepScreenOn();
+    vw.iv = setInterval(tick, 1000);
+    redrawViewer();
+  };
+  // doppio tocco sul testo del passaggio: spunta o togli la spunta
+  let stepTap = 0;
+  sheetEl().addEventListener('touchend', e => {
+    if (!vw || !e.target.closest('[data-stepdone]')) return;
+    const now = Date.now();
+    if (now - stepTap < 350){ stepTap = 0; if (vw.done.has(vw.i)) vw.done.delete(vw.i); else vw.done.add(vw.i); saveProg(); redrawViewer(); }
+    else stepTap = now;
+  }, {passive:true});
+  // scorrimento orizzontale per passare da un passaggio all'altro
+  let vx = null;
+  sheetEl().addEventListener('touchstart', e => { if (vw) vx = e.touches[0].clientX; }, {passive:true});
+  sheetEl().addEventListener('touchend', e => {
+    if (!vw || vx === null) return;
+    const dx = e.changedTouches[0].clientX - vx; vx = null;
+    if (Math.abs(dx) < 40) return;
+    const next = dx < 0 ? vw.i + 1 : vw.i - 1;
+    if (next < 0 || next >= vw.steps.length) return;
+    stopTimer(); vw.i = next; vw.left = 0; vw.started = false; saveProg(); redrawViewer();
+  }, {passive:true});
+
   // tieni premuto un evento del giorno: modifica o elimina
-  let pressTimer = null, pressFired = false, sx = null, sy = null;
+  let pressTimer = null, pressFired = false, sx = null, sy = null, startRow = null;
   body().addEventListener('touchstart', e => {
     sx = e.touches[0].clientX; sy = e.touches[0].clientY; pressFired = false;
+    startRow = e.target.closest('.wi[data-id]');
     const row = e.target.closest('.wi[data-id]');
     if (tab === 'giorno' && row){
       clearTimeout(pressTimer);
@@ -3957,12 +4068,28 @@ async function watchMode(){
   body().addEventListener('touchmove', e => {
     if (sx !== null && (Math.abs(e.touches[0].clientX - sx) > 10 || Math.abs(e.touches[0].clientY - sy) > 10)) clearTimeout(pressTimer);
   }, {passive:true});
+  let lastTap = {id:null, t:0}, tapTimer = null;
+  const toggleDone = id => {
+    const t = find(id); if (!t) return;
+    t.done = !t.done; draw();
+    dbOp(WCAL, 'tasks', 'update', {id: t.id, data: {done: t.done}}).then(({error}) => { if (error){ t.done = !t.done; draw(); } });
+  };
   body().addEventListener('touchend', e => {
     clearTimeout(pressTimer);
     if (pressFired){ pressFired = false; sx = null; return; }
-    if (sx === null || tab !== 'giorno') { sx = null; return; }
+    if (sx === null) return;
     const dx = e.changedTouches[0].clientX - sx, dy = e.changedTouches[0].clientY - sy; sx = null;
-    if (Math.abs(dx) > 35 && Math.abs(dx) > Math.abs(dy) * 1.2){ viewDate = addDays(viewDate, dx < 0 ? 1 : -1); draw(); }
+    const moved = Math.abs(dx) > 12 || Math.abs(dy) > 12;
+    if (!moved && tab === 'giorno' && startRow){
+      const id = startRow.dataset.id, now = Date.now();
+      if (lastTap.id === id && now - lastTap.t < 350){ clearTimeout(tapTimer); lastTap = {id:null, t:0}; toggleDone(id); }
+      else {
+        lastTap = {id, t: now}; clearTimeout(tapTimer);
+        tapTimer = setTimeout(() => { const t = find(id); if (t && t.kind && String(t.kind).startsWith('proto:')) openViewer(t); }, 350);
+      }
+      return;
+    }
+    if (Math.abs(dx) > 35 && Math.abs(dx) > Math.abs(dy) * 1.2 && tab === 'giorno'){ viewDate = addDays(viewDate, dx < 0 ? 1 : -1); draw(); }
   }, {passive:true});
 
   // schede
@@ -3981,6 +4108,13 @@ async function watchMode(){
       const {error} = await dbOp(WCAL, 'tasks', 'update', {id: sv.dataset.save, data: {title: v}});
       if (error){ msg('Modifica non salvata, riprova'); return; }
       await load(); return;
+    }
+    if (vw){
+      if (e.target.closest('[data-next]')){ stopTimer(); vw.i = Math.min(vw.i+1, vw.steps.length-1); vw.left = 0; vw.started = false; saveProg(); redrawViewer(); return; }
+      if (e.target.closest('[data-prev]')){ stopTimer(); vw.i = Math.max(vw.i-1, 0); vw.left = 0; vw.started = false; saveProg(); redrawViewer(); return; }
+      if (e.target.closest('[data-restart]')){ stopTimer(); vw.i = 0; vw.done = new Set(); vw.left = 0; vw.started = false; saveProg(); redrawViewer(); return; }
+      const ts = e.target.closest('[data-tstart]'); if (ts){ startTimer(+ts.dataset.tstart); return; }
+      if (e.target.closest('[data-tstop]')){ stopTimer(); vw.left = 0; redrawViewer(); return; }
     }
     const dy = e.target.closest('[data-delyes]');
     if (dy){
