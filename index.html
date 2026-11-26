@@ -511,12 +511,14 @@ html[data-style="win95"] ::selection{background:#000080;color:#ffffff}
   .fzres{display:block;text-align:left;margin-bottom:6px;font-weight:500}
   .fzgrid{display:grid;grid-template-columns:26px repeat(9,1fr);gap:3px;background:var(--panel);padding:8px;border-radius:14px;border:2px solid var(--line)}
   .fzhead{display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--muted)}
-  .fzc{aspect-ratio:1;min-width:0;padding:2px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--fg);display:flex;flex-direction:column;align-items:stretch;justify-content:space-between;overflow:hidden;font-size:10px;line-height:1.1;cursor:pointer}
-  .fzc .fzid{font-size:9px;color:var(--muted);text-align:left}
-  .fzc .fzt{overflow:hidden;text-overflow:ellipsis;word-break:break-word;max-height:2.6em;text-align:left}
-  .fzc.full{background:var(--accent-soft);border-color:var(--accent)}
+  .fzc{aspect-ratio:1;min-width:0;padding:3px;border:1px solid #b5b5b5;border-radius:6px;background:#e4e4e4;color:#222;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;overflow:hidden;font-size:10px;line-height:1.15;cursor:pointer;position:relative;user-select:none}
+  .fzc .fzid{position:absolute;top:2px;left:4px;font-size:9px;color:#777}
+  .fzc .fzt{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word;width:100%;padding-top:8px}
+  .fzc.full{background:#cfcfcf;border-color:#8a8a8a}
+  .fzc.cat{box-shadow:inset 0 -6px 0 var(--c)}
   .fzc.hl{background:#fff3b0;border-color:#e0b800}
   .fzc.foc{outline:3px solid var(--accent);outline-offset:1px}
+  .fzc.over{outline:2px dashed var(--accent);outline-offset:-2px}
 
   .fzmodal{position:fixed;inset:0;background:rgba(0,0,0,.35);display:none;align-items:center;justify-content:center;z-index:999;padding:16px}
   .fzmbox{background:var(--panel);border-radius:18px;padding:16px;width:min(420px,100%);display:flex;flex-direction:column;gap:12px;box-shadow:0 10px 30px rgba(0,0,0,.25)}
@@ -1804,6 +1806,18 @@ function fzDrawModal(){
     <div class="fzmbtns"><button type="button" class="btn" data-fzcancel="1">Annulla</button><button type="button" class="btn big" data-fzsave="1">Salva</button></div></div>`;
   setTimeout(() => { const i = document.getElementById('fzmText'); if (i){ i.focus(); i.setSelectionRange(i.value.length, i.value.length); } }, 30);
 }
+// sposta una casella in un'altra posizione; se la destinazione è piena, le due caselle si scambiano
+async function moveFzCell(fromId, toId){
+  if (!fzBox || !fromId || !toId || fromId === toId) return;
+  const box = fzBoxes().find(b => b.key === fzBox); if (!box) return;
+  const src = box.cells[fromId]; if (src === undefined) return;
+  const dst = box.cells[toId];
+  if (dst === undefined) delete box.cells[fromId]; else box.cells[fromId] = dst;
+  box.cells[toId] = src;
+  fzFocus = toId;
+  render();
+  await fzSave(fzBox, box);
+}
 async function fzCommit(){
   const box = fzBoxes().find(b => b.key === fzBox); if (!box || !fzDraft) return;
   const t = (fzDraft.text || '').trim();
@@ -1832,7 +1846,7 @@ function freezerHTML(){
       const id = FZ_ROWS[r] + c, cv = box.cells[id], t = fzText(cv), col = fzColor(cv);
       const hl = q && t.toLowerCase().includes(q) ? ' hl' : '';
       const foc = fzFocus === id ? ' foc' : '';
-      grid += `<button type="button" class="fzc${t ? ' full' : ''}${hl}${foc}" data-fzcell="${id}" title="${esc(id + (t ? ': ' + t : ' (libera)'))}">
+      grid += `<button type="button" class="fzc${t ? ' full' : ''}${col ? ' cat' : ''}${hl}${foc}"${col ? ` style="--c:${col}"` : ''} draggable="${t ? 'true' : 'false'}" data-fzcell="${id}" title="${esc(id + (t ? ': ' + t : ' (libera)'))}">
         <span class="fzid">${id}</span><span class="fzt"${col ? ` style="color:${col};font-weight:700"` : ''}>${esc(t)}</span></button>`;
     }
   }
@@ -3870,6 +3884,30 @@ root.addEventListener('change', e => {
   }
 });
 
+let fzDragId = null;
+root.addEventListener('dragstart', e => {
+  const c = e.target.closest('[data-fzcell]'); if (!c || view !== 'freezer' || !fzBox) return;
+  fzDragId = c.dataset.fzcell;
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', 'fz:' + fzDragId);
+});
+root.addEventListener('dragover', e => {
+  const c = e.target.closest('[data-fzcell]'); if (!c || !fzDragId) return;
+  e.preventDefault(); e.dataTransfer.dropEffect = 'move';
+  document.querySelectorAll('.fzc.over').forEach(n => n.classList.remove('over'));
+  c.classList.add('over');
+});
+root.addEventListener('dragleave', e => {
+  const c = e.target.closest('[data-fzcell]'); if (c) c.classList.remove('over');
+});
+root.addEventListener('drop', e => {
+  const c = e.target.closest('[data-fzcell]'); if (!c || !fzDragId) return;
+  e.preventDefault();
+  document.querySelectorAll('.fzc.over').forEach(n => n.classList.remove('over'));
+  const from = fzDragId; fzDragId = null;
+  moveFzCell(from, c.dataset.fzcell);
+});
+root.addEventListener('dragend', () => { fzDragId = null; });
 root.addEventListener('dragstart', e => {
   const bkEl = e.target.closest('[data-bk]');
   if (bkEl){ e.dataTransfer.setData('text/plain', 'bk:' + bkEl.dataset.bk); e.dataTransfer.effectAllowed = 'copyMove'; return; }
@@ -3912,7 +3950,7 @@ function tdClear(){
 }
 root.addEventListener('pointerdown', e => {
   if (e.pointerType !== 'touch') return;
-  const el = e.target.closest('[data-task],[data-bk],[data-pdrag]');
+  const el = e.target.closest('[data-task],[data-bk],[data-pdrag],[data-fzcell]');
   if (!el) return;
   tdPend = {x: e.clientX, y: e.clientY, el};
   tdTimer = setTimeout(() => {
@@ -3921,7 +3959,7 @@ root.addEventListener('pointerdown', e => {
     const ghost = tdPend.el.cloneNode(true);
     ghost.style.cssText = `position:fixed;pointer-events:none;opacity:.85;z-index:999;margin:0;width:${r.width}px;left:${tdPend.x}px;top:${tdPend.y}px;transform:translate(-50%,-50%)`;
     document.body.appendChild(ghost);
-    tdDrag = {el: tdPend.el, ghost, id: tdPend.el.dataset.task || (tdPend.el.dataset.pdrag ? 'pd:' + tdPend.el.dataset.pdrag : 'bk:' + tdPend.el.dataset.bk)};
+    tdDrag = {el: tdPend.el, ghost, id: tdPend.el.dataset.task || (tdPend.el.dataset.pdrag ? 'pd:' + tdPend.el.dataset.pdrag : (tdPend.el.dataset.fzcell ? 'fz:' + tdPend.el.dataset.fzcell : 'bk:' + tdPend.el.dataset.bk))};
     tdPend.el.classList.add('dragging');
     if (navigator.vibrate) navigator.vibrate(15);
   }, 350);
@@ -3934,7 +3972,7 @@ document.addEventListener('pointermove', e => {
   tdDrag.ghost.style.left = e.clientX + 'px';
   tdDrag.ghost.style.top = e.clientY + 'px';
   document.querySelectorAll('.over').forEach(n => n.classList.remove('over'));
-  const zone = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-drop],[data-cat-drop]');
+  const zone = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-drop],[data-cat-drop],[data-fzcell]');
   if (zone) zone.classList.add('over');
 });
 // durante il trascinamento la pagina non scorre
@@ -3949,6 +3987,11 @@ document.addEventListener('pointerup', e => {
     const cz = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-cat-drop]');
     const pp = cz && protos.find(x => x.id === drag.id.slice(3));
     if (pp){ setProtoCat(pp, cz.dataset.catDrop || ''); render(); }
+    return;
+  }
+  if (drag.id.startsWith('fz:')){
+    const cz = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-fzcell]');
+    if (cz) moveFzCell(drag.id.slice(3), cz.dataset.fzcell);
     return;
   }
   if (!zone) return;
