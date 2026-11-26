@@ -517,6 +517,16 @@ html[data-style="win95"] ::selection{background:#000080;color:#ffffff}
   .fzc.full{background:var(--accent-soft);border-color:var(--accent)}
   .fzc.hl{background:#fff3b0;border-color:#e0b800}
   .fzc.foc{outline:3px solid var(--accent);outline-offset:1px}
+
+  .fzmodal{position:fixed;inset:0;background:rgba(0,0,0,.35);display:none;align-items:center;justify-content:center;z-index:999;padding:16px}
+  .fzmbox{background:var(--panel);border-radius:18px;padding:16px;width:min(420px,100%);display:flex;flex-direction:column;gap:12px;box-shadow:0 10px 30px rgba(0,0,0,.25)}
+  .fzmtitle{font-weight:800;color:var(--accent);font-size:18px}
+  .fzmbox input{padding:10px 12px;border:2px solid var(--line);border-radius:12px;font-size:16px;background:#fff;color:var(--fg)}
+  .fzmcols{display:flex;gap:8px;flex-wrap:wrap}
+  .fzsw{width:36px;height:36px;border-radius:50%;border:3px solid #fff;box-shadow:0 0 0 1px var(--line);cursor:pointer}
+  .fzsw.on{outline:3px solid var(--fg);outline-offset:1px}
+  .fzsw.none{background:#fff;color:var(--muted);font-size:18px}
+  .fzmbtns{display:flex;justify-content:flex-end;gap:8px}
 </style>
 </head>
 <body>
@@ -1737,6 +1747,10 @@ function grpPath(id){
 
 // ---- freezer: scatole 9×9 con la posizione di ogni campione, salvate nella tabella condivisa app_settings ----
 let fzBox = null, fzQuery = '', fzFocus = null;
+const FZ_COLS = [['#111111','nero'],['#c62828','rosso'],['#e07a1f','arancio'],['#2e9d5b','verde'],['#2f6fd6','blu'],['#8a4fd6','viola'],['#d9557f','rosa']];
+let fzDraft = null;   // casella in modifica: {id, text, col}
+const fzText = v => typeof v === 'string' ? v : ((v && v.t) || '');
+const fzColor = v => (v && typeof v === 'object') ? (v.c || null) : null;
 const FZ_ROWS = 'ABCDEFGHI';
 function fzBoxes(){
   return Object.keys(appNames).filter(k => k.startsWith('freezer:' + curCal + ':')).map(k => {
@@ -1754,9 +1768,50 @@ function fzResultsHTML(boxes){
   const q = fzQuery.trim().toLowerCase();
   if (!q) return '';
   const hits = [];
-  boxes.forEach(b => Object.entries(b.cells).forEach(([id, t]) => { if (String(t).toLowerCase().includes(q)) hits.push({b, id, t}); }));
+  boxes.forEach(b => Object.entries(b.cells).forEach(([id, v]) => { const t = fzText(v); if (t.toLowerCase().includes(q)) hits.push({b, id, t}); }));
   if (!hits.length) return '<div class="note">Nessun risultato</div>';
   return hits.map(h => `<button type="button" class="btn fzres" data-fzres="${esc(h.b.key)}|${h.id}">${esc(h.b.name)} · <b>${h.id}</b>: ${esc(h.t)}</button>`).join('');
+}
+
+// pannello per scrivere in una casella, con il colore del testo
+function fzEditCell(id){
+  const box = fzBoxes().find(b => b.key === fzBox); if (!box) return;
+  const cur = box.cells[id];
+  fzDraft = {id, text: fzText(cur), col: fzColor(cur)};
+  fzDrawModal();
+}
+function fzDrawModal(){
+  let m = document.getElementById('fzModal');
+  if (!m){
+    m = document.createElement('div'); m.id = 'fzModal'; m.className = 'fzmodal'; document.body.appendChild(m);
+    m.addEventListener('click', e => {
+      if (!fzDraft) return;
+      if (e.target === m || e.target.closest('[data-fzcancel]')){ fzDraft = null; fzDrawModal(); return; }
+      const sw = e.target.closest('[data-fzcol]');
+      if (sw){ fzDraft.col = sw.dataset.fzcol || null; fzDrawModal(); return; }
+      if (e.target.closest('[data-fzsave]')) fzCommit();
+    });
+    m.addEventListener('input', e => { if (e.target.id === 'fzmText' && fzDraft) fzDraft.text = e.target.value; });
+    m.addEventListener('keydown', e => { if (e.target.id === 'fzmText' && e.key === 'Enter'){ e.preventDefault(); fzCommit(); } });
+  }
+  if (!fzDraft){ m.style.display = 'none'; m.innerHTML = ''; return; }
+  m.style.display = 'flex';
+  m.innerHTML = `<div class="fzmbox">
+    <div class="fzmtitle">Casella ${esc(fzDraft.id)}</div>
+    <input id="fzmText" value="${esc(fzDraft.text)}" placeholder="Cosa c'è dentro (vuoto = libera)" maxlength="200">
+    <div class="fzmcols">${FZ_COLS.map(([c, n]) => `<button type="button" class="fzsw${fzDraft.col === c ? ' on' : ''}" style="background:${c}" data-fzcol="${c}" title="${n}"></button>`).join('')}
+      <button type="button" class="fzsw none${!fzDraft.col ? ' on' : ''}" data-fzcol="" title="senza colore">×</button></div>
+    <div class="fzmbtns"><button type="button" class="btn" data-fzcancel="1">Annulla</button><button type="button" class="btn big" data-fzsave="1">Salva</button></div></div>`;
+  setTimeout(() => { const i = document.getElementById('fzmText'); if (i){ i.focus(); i.setSelectionRange(i.value.length, i.value.length); } }, 30);
+}
+async function fzCommit(){
+  const box = fzBoxes().find(b => b.key === fzBox); if (!box || !fzDraft) return;
+  const t = (fzDraft.text || '').trim();
+  if (!t) delete box.cells[fzDraft.id];
+  else box.cells[fzDraft.id] = fzDraft.col ? {t, c: fzDraft.col} : t;
+  fzFocus = fzDraft.id; fzDraft = null; fzDrawModal();
+  await fzSave(fzBox, box);
+  render();
 }
 function freezerHTML(){
   const boxes = fzBoxes();
@@ -1774,11 +1829,11 @@ function freezerHTML(){
   for (let r = 0; r < 9; r++){
     grid += `<div class="fzhead">${FZ_ROWS[r]}</div>`;
     for (let c = 1; c <= 9; c++){
-      const id = FZ_ROWS[r] + c, t = box.cells[id] || '';
+      const id = FZ_ROWS[r] + c, cv = box.cells[id], t = fzText(cv), col = fzColor(cv);
       const hl = q && t.toLowerCase().includes(q) ? ' hl' : '';
       const foc = fzFocus === id ? ' foc' : '';
       grid += `<button type="button" class="fzc${t ? ' full' : ''}${hl}${foc}" data-fzcell="${id}" title="${esc(id + (t ? ': ' + t : ' (libera)'))}">
-        <span class="fzid">${id}</span><span class="fzt">${esc(t)}</span></button>`;
+        <span class="fzid">${id}</span><span class="fzt"${col ? ` style="color:${col};font-weight:700"` : ''}>${esc(t)}</span></button>`;
     }
   }
   return `<div class="fzwrap">
@@ -3406,14 +3461,7 @@ root.addEventListener('click', e => {
       if (fz.dataset.fzbox !== undefined){ fzBox = fz.dataset.fzbox; fzQuery = ''; fzFocus = null; render(); return; }
       if (fz.dataset.fzback !== undefined){ fzBox = null; fzQuery = ''; fzFocus = null; render(); return; }
       if (fz.dataset.fzres !== undefined){ const [k, id] = fz.dataset.fzres.split('|'); fzBox = k; fzFocus = id; render(); return; }
-      if (fz.dataset.fzcell !== undefined){
-        const box = fzBoxes().find(b => b.key === fzBox); if (!box) return;
-        const id = fz.dataset.fzcell; const cur = box.cells[id] || '';
-        const v = prompt(`${box.name} · ${id}\nCosa c'è dentro (vuoto = libera):`, cur); if (v === null) return;
-        const t = v.trim(); if (t) box.cells[id] = t; else delete box.cells[id];
-        fzFocus = id;
-        fzSave(fzBox, box).then(render); return;
-      }
+      if (fz.dataset.fzcell !== undefined){ fzEditCell(fz.dataset.fzcell); return; }
     }
   }
   if (e.target.closest('#back')){
