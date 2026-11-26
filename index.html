@@ -502,6 +502,21 @@ html[data-style="win95"] ::selection{background:#000080;color:#ffffff}
   .wf .wpage{padding-bottom:12px}
 
   .wf .wtab.wexit{border-color:var(--muted);color:var(--muted);font-size:14px}
+
+  .fzwrap{display:flex;flex-direction:column;gap:10px;max-width:760px;margin:0 auto}
+  .fzbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .fzbar input{flex:1 1 220px;padding:9px 12px;border:2px solid var(--line);border-radius:12px;font-size:15px;background:#fff;color:var(--fg)}
+  .fzlist{display:flex;flex-wrap:wrap;gap:8px}
+  .fzbox{text-align:left}
+  .fzres{display:block;text-align:left;margin-bottom:6px;font-weight:500}
+  .fzgrid{display:grid;grid-template-columns:26px repeat(9,1fr);gap:3px;background:var(--panel);padding:8px;border-radius:14px;border:2px solid var(--line)}
+  .fzhead{display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--muted)}
+  .fzc{aspect-ratio:1;min-width:0;padding:2px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--fg);display:flex;flex-direction:column;align-items:stretch;justify-content:space-between;overflow:hidden;font-size:10px;line-height:1.1;cursor:pointer}
+  .fzc .fzid{font-size:9px;color:var(--muted);text-align:left}
+  .fzc .fzt{overflow:hidden;text-overflow:ellipsis;word-break:break-word;max-height:2.6em;text-align:left}
+  .fzc.full{background:var(--accent-soft);border-color:var(--accent)}
+  .fzc.hl{background:#fff3b0;border-color:#e0b800}
+  .fzc.foc{outline:3px solid var(--accent);outline-offset:1px}
 </style>
 </head>
 <body>
@@ -1719,6 +1734,59 @@ function grpPath(id){
   while (g){ parts.unshift(g.name); g = g.parentId ? grpById(g.parentId) : null; }
   return parts.join(' › ');
 }
+
+// ---- freezer: scatole 9×9 con la posizione di ogni campione, salvate nella tabella condivisa app_settings ----
+let fzBox = null, fzQuery = '', fzFocus = null;
+const FZ_ROWS = 'ABCDEFGHI';
+function fzBoxes(){
+  return Object.keys(appNames).filter(k => k.startsWith('freezer:')).map(k => {
+    let v = {}; try { v = JSON.parse(appNames[k]) || {}; } catch(_) {}
+    return {key: k, name: v.name || 'Scatola', cells: v.cells || {}};
+  }).sort((a, b) => a.name.localeCompare(b.name, 'it'));
+}
+async function fzSave(key, box){
+  const val = JSON.stringify({name: box.name, cells: box.cells});
+  appNames[key] = val;
+  const {error} = await sb.from('app_settings').upsert({key, value: val});
+  if (error) flash('Non salvato: serve la tabella app_settings su Supabase.');
+}
+function fzResultsHTML(boxes){
+  const q = fzQuery.trim().toLowerCase();
+  if (!q) return '';
+  const hits = [];
+  boxes.forEach(b => Object.entries(b.cells).forEach(([id, t]) => { if (String(t).toLowerCase().includes(q)) hits.push({b, id, t}); }));
+  if (!hits.length) return '<div class="note">Nessun risultato</div>';
+  return hits.map(h => `<button type="button" class="btn fzres" data-fzres="${esc(h.b.key)}|${h.id}">${esc(h.b.name)} · <b>${h.id}</b>: ${esc(h.t)}</button>`).join('');
+}
+function freezerHTML(){
+  const boxes = fzBoxes();
+  if (!fzBox){
+    return `<div class="fzwrap">
+      <div class="fzbar"><input id="fzSearch" placeholder="Cerca un campione (es. GFP, T47D)" value="${esc(fzQuery)}"><button type="button" class="btn" data-fznew="1">+ Scatola</button></div>
+      <div id="fzRes">${fzResultsHTML(boxes)}</div>
+      <div class="fzlist">${boxes.length ? boxes.map(b => `<button type="button" class="btn fzbox" data-fzbox="${esc(b.key)}">${esc(b.name)} <span class="note">(${Object.keys(b.cells).length} campioni)</span></button>`).join('') : '<div class="note">Nessuna scatola: creane una con + Scatola.</div>'}</div></div>`;
+  }
+  const box = boxes.find(b => b.key === fzBox);
+  if (!box){ fzBox = null; return freezerHTML(); }
+  const q = fzQuery.trim().toLowerCase();
+  let grid = '<div class="fzcorner"></div>';
+  for (let c = 1; c <= 9; c++) grid += `<div class="fzhead">${c}</div>`;
+  for (let r = 0; r < 9; r++){
+    grid += `<div class="fzhead">${FZ_ROWS[r]}</div>`;
+    for (let c = 1; c <= 9; c++){
+      const id = FZ_ROWS[r] + c, t = box.cells[id] || '';
+      const hl = q && t.toLowerCase().includes(q) ? ' hl' : '';
+      const foc = fzFocus === id ? ' foc' : '';
+      grid += `<button type="button" class="fzc${t ? ' full' : ''}${hl}${foc}" data-fzcell="${id}" title="${esc(id + (t ? ': ' + t : ' (libera)'))}">
+        <span class="fzid">${id}</span><span class="fzt">${esc(t)}</span></button>`;
+    }
+  }
+  return `<div class="fzwrap">
+    <div class="fzbar"><button type="button" class="btn" data-fzback="1">← Scatole</button>
+      <input id="fzSearch" placeholder="Cerca in tutte le scatole" value="${esc(fzQuery)}"></div>
+    <div id="fzRes">${fzResultsHTML(boxes)}</div>
+    <div class="fzgrid">${grid}</div></div>`;
+}
 // nomi condivisi tra tutti i dispositivi (tabella app_settings)
 let appNames = {};
 async function loadAppSettings(){
@@ -2884,6 +2952,10 @@ function topHTML(){
     return `<button type="button" class="btn" id="back">← Indietro</button>
       <span class="ttl">Protocolli · ${esc((calById(curCal) || {}).name || '')}</span><span class="spacer"></span>${fs}`;
   }
+  if (view === 'freezer'){
+    return `<button type="button" class="btn" id="back">← Indietro</button>
+      <span class="ttl">Freezer</span><span class="spacer"></span>${fs}`;
+  }
   if (view === 'lab'){
     return `<button type="button" class="btn" id="back">← Indietro</button>
       <span class="ttl">${esc(labName(curLab))}</span><span class="spacer"></span>
@@ -2891,6 +2963,7 @@ function topHTML(){
       ${curLab !== 'none' ? `<button type="button" class="btn" id="grpNew">+ Gruppo</button>` : ''}`;
   }
   return `<span class="ttl">Laboratori</span><span class="spacer"></span>
+    <button type="button" class="btn" id="freezerBtn">Freezer</button>
     <button type="button" class="btn" id="labNew">+ Laboratorio</button>${fs}`;
 }
 
@@ -3271,6 +3344,8 @@ function render(){
     refreshCalc();
   } else if (view === 'lab'){
     $('view').innerHTML = labHTML();
+  } else if (view === 'freezer'){
+    $('view').innerHTML = freezerHTML();
   } else {
     $('view').innerHTML = homeHTML();
   }
@@ -3320,7 +3395,31 @@ root.addEventListener('click', e => {
   const pmCat = e.target.closest('[data-pm-cat]');
   if (pmCat){ openCatModal('move', pmCat.dataset.pmCat); return; }
   if (e.target.closest('#schSave')){ saveSched(); return; }
-  if (e.target.closest('#back')){ goBack(); return; }
+  if (e.target.closest('#freezerBtn')){ view = 'freezer'; fzBox = null; fzQuery = ''; render(); return; }
+  if (view === 'freezer'){
+    const fz = e.target.closest('[data-fzcell],[data-fzbox],[data-fzres],[data-fznew],[data-fzback]');
+    if (fz){
+      if (fz.dataset.fznew !== undefined){
+        const name = (prompt('Nome della scatola (es. Cellule T47D, scatola 1):') || '').trim(); if (!name) return;
+        fzSave('freezer:' + crypto.randomUUID(), {name, cells: {}}).then(render); return;
+      }
+      if (fz.dataset.fzbox !== undefined){ fzBox = fz.dataset.fzbox; fzQuery = ''; fzFocus = null; render(); return; }
+      if (fz.dataset.fzback !== undefined){ fzBox = null; fzQuery = ''; fzFocus = null; render(); return; }
+      if (fz.dataset.fzres !== undefined){ const [k, id] = fz.dataset.fzres.split('|'); fzBox = k; fzFocus = id; render(); return; }
+      if (fz.dataset.fzcell !== undefined){
+        const box = fzBoxes().find(b => b.key === fzBox); if (!box) return;
+        const id = fz.dataset.fzcell; const cur = box.cells[id] || '';
+        const v = prompt(`${box.name} · ${id}\nCosa c'è dentro (vuoto = libera):`, cur); if (v === null) return;
+        const t = v.trim(); if (t) box.cells[id] = t; else delete box.cells[id];
+        fzFocus = id;
+        fzSave(fzBox, box).then(render); return;
+      }
+    }
+  }
+  if (e.target.closest('#back')){
+    if (view === 'freezer'){ if (fzBox){ fzBox = null; fzQuery = ''; fzFocus = null; } else view = 'home'; render(); return; }
+    goBack(); return;
+  }
   if (e.target.closest('[data-cal-ren]')){ renameCalById(e.target.closest('[data-cal-ren]').dataset.calRen); return; }
   if (e.target.closest('[data-cal-del]')){ deleteCalById(e.target.closest('[data-cal-del]').dataset.calDel); return; }
   if (e.target.closest('[data-grp-ren]')){ renameGroupById(e.target.closest('[data-grp-ren]').dataset.grpRen); return; }
@@ -3624,6 +3723,12 @@ window.matchMedia('(max-width:700px)').addEventListener('change', () => render()
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => render());
 
 root.addEventListener('input', e => {
+  if (e.target.id === 'fzSearch'){
+    fzQuery = e.target.value;
+    render();
+    const el = $('fzSearch'); if (el){ el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+    return;
+  }
   if (e.target.id === 'protoSearch'){
     protoQuery = e.target.value;
     render();
