@@ -511,10 +511,11 @@ html[data-style="win95"] ::selection{background:#000080;color:#ffffff}
   .fzres{display:block;text-align:left;margin-bottom:6px;font-weight:500}
   .fzgrid{display:grid;grid-template-columns:26px repeat(9,1fr);gap:3px;background:var(--panel);padding:8px;border-radius:14px;border:2px solid var(--line)}
   .fzhead{display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--muted)}
-  .fzc{aspect-ratio:1;min-width:0;padding:3px;border:1px solid #b5b5b5;border-radius:6px;background:#e4e4e4;color:#222;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;overflow:hidden;font-size:10px;line-height:1.15;cursor:pointer;position:relative;user-select:none}
-  .fzc .fzid{position:absolute;top:2px;left:4px;font-size:9px;color:#777}
+  .fzc{aspect-ratio:1;min-width:0;padding:3px;border:1px solid #d9d9d9;border-radius:6px;background:#fff;color:#222;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;overflow:hidden;font-size:10px;line-height:1.15;cursor:pointer;position:relative;user-select:none}
+  .fzc .fzid{position:absolute;top:2px;left:4px;font-size:9px;color:#999}
+  .fzc .fzd{position:absolute;top:2px;right:4px;font-size:9px;color:#555}
   .fzc .fzt{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word;width:100%;padding-top:8px}
-  .fzc.full{background:#cfcfcf;border-color:#8a8a8a}
+  .fzc.full{background:#d6d6d6;border-color:#9a9a9a}
   .fzc.cat{box-shadow:inset 0 -6px 0 var(--c)}
   .fzc.hl{background:#fff3b0;border-color:#e0b800}
   .fzc.foc{outline:3px solid var(--accent);outline-offset:1px}
@@ -528,7 +529,11 @@ html[data-style="win95"] ::selection{background:#000080;color:#ffffff}
   .fzsw{width:36px;height:36px;border-radius:50%;border:3px solid #fff;box-shadow:0 0 0 1px var(--line);cursor:pointer}
   .fzsw.on{outline:3px solid var(--fg);outline-offset:1px}
   .fzsw.none{background:#fff;color:var(--muted);font-size:18px}
-  .fzmbtns{display:flex;justify-content:flex-end;gap:8px}
+  .fzmbtns{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+  .fzmrow{display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--muted)}
+  .fzmcolor{width:36px;height:36px;padding:0;border:none;background:none;cursor:pointer}
+  .fzmbar{height:8px;border-radius:4px}
+  .fzmvtext{font-size:20px;font-weight:700;overflow-wrap:anywhere;text-align:center;padding:8px 0}
 </style>
 </head>
 <body>
@@ -1749,7 +1754,7 @@ function grpPath(id){
 
 // ---- freezer: scatole 9×9 con la posizione di ogni campione, salvate nella tabella condivisa app_settings ----
 let fzBox = null, fzQuery = '', fzFocus = null;
-const FZ_COLS = [['#111111','nero'],['#c62828','rosso'],['#e07a1f','arancio'],['#2e9d5b','verde'],['#2f6fd6','blu'],['#8a4fd6','viola'],['#d9557f','rosa']];
+const FZ_COLS = [['#111111','nero'],['#c62828','rosso'],['#e07a1f','arancio'],['#f2b705','giallo'],['#2e9d5b','verde'],['#00897b','turchese'],['#2f6fd6','blu'],['#8a4fd6','viola'],['#d9557f','rosa'],['#6d4c41','marrone'],['#7a7a7a','grigio']];
 let fzDraft = null;   // casella in modifica: {id, text, col}
 const fzText = v => typeof v === 'string' ? v : ((v && v.t) || '');
 const fzColor = v => (v && typeof v === 'object') ? (v.c || null) : null;
@@ -1775,37 +1780,9 @@ function fzResultsHTML(boxes){
   return hits.map(h => `<button type="button" class="btn fzres" data-fzres="${esc(h.b.key)}|${h.id}">${esc(h.b.name)} · <b>${h.id}</b>: ${esc(h.t)}</button>`).join('');
 }
 
-// pannello per scrivere in una casella, con il colore del testo
-function fzEditCell(id){
-  const box = fzBoxes().find(b => b.key === fzBox); if (!box) return;
-  const cur = box.cells[id];
-  fzDraft = {id, text: fzText(cur), col: fzColor(cur)};
-  fzDrawModal();
-}
-function fzDrawModal(){
-  let m = document.getElementById('fzModal');
-  if (!m){
-    m = document.createElement('div'); m.id = 'fzModal'; m.className = 'fzmodal'; document.body.appendChild(m);
-    m.addEventListener('click', e => {
-      if (!fzDraft) return;
-      if (e.target === m || e.target.closest('[data-fzcancel]')){ fzDraft = null; fzDrawModal(); return; }
-      const sw = e.target.closest('[data-fzcol]');
-      if (sw){ fzDraft.col = sw.dataset.fzcol || null; fzDrawModal(); return; }
-      if (e.target.closest('[data-fzsave]')) fzCommit();
-    });
-    m.addEventListener('input', e => { if (e.target.id === 'fzmText' && fzDraft) fzDraft.text = e.target.value; });
-    m.addEventListener('keydown', e => { if (e.target.id === 'fzmText' && e.key === 'Enter'){ e.preventDefault(); fzCommit(); } });
-  }
-  if (!fzDraft){ m.style.display = 'none'; m.innerHTML = ''; return; }
-  m.style.display = 'flex';
-  m.innerHTML = `<div class="fzmbox">
-    <div class="fzmtitle">Casella ${esc(fzDraft.id)}</div>
-    <input id="fzmText" value="${esc(fzDraft.text)}" placeholder="Cosa c'è dentro (vuoto = libera)" maxlength="200">
-    <div class="fzmcols">${FZ_COLS.map(([c, n]) => `<button type="button" class="fzsw${fzDraft.col === c ? ' on' : ''}" style="background:${c}" data-fzcol="${c}" title="${n}"></button>`).join('')}
-      <button type="button" class="fzsw none${!fzDraft.col ? ' on' : ''}" data-fzcol="" title="senza colore">×</button></div>
-    <div class="fzmbtns"><button type="button" class="btn" data-fzcancel="1">Annulla</button><button type="button" class="btn big" data-fzsave="1">Salva</button></div></div>`;
-  setTimeout(() => { const i = document.getElementById('fzmText'); if (i){ i.focus(); i.setSelectionRange(i.value.length, i.value.length); } }, 30);
-}
+// data in formato italiano e lettura della data della casella
+const fzDateIT = d => d ? d.split('-').reverse().join('/') : '';
+const fzDate = v => (v && typeof v === 'object') ? (v.d || '') : '';
 // sposta una casella in un'altra posizione; se la destinazione è piena, le due caselle si scambiano
 async function moveFzCell(fromId, toId){
   if (!fzBox || !fromId || !toId || fromId === toId) return;
@@ -1818,11 +1795,71 @@ async function moveFzCell(fromId, toId){
   render();
   await fzSave(fzBox, box);
 }
+// tocco su una casella: se è piena si apre la visualizzazione, se è libera si apre la modifica
+function fzEditCell(id){
+  const box = fzBoxes().find(b => b.key === fzBox); if (!box) return;
+  const cur = box.cells[id];
+  const full = !!fzText(cur);
+  fzDraft = {id, text: fzText(cur), col: fzColor(cur), date: fzDate(cur), full, mode: full ? 'view' : 'edit'};
+  fzDrawModal();
+}
+function fzDrawModal(){
+  let m = document.getElementById('fzModal');
+  if (!m){
+    m = document.createElement('div'); m.id = 'fzModal'; m.className = 'fzmodal'; document.body.appendChild(m);
+    m.addEventListener('click', e => {
+      if (!fzDraft) return;
+      if (e.target === m || e.target.closest('[data-fzcancel]')){ fzDraft = null; fzDrawModal(); return; }
+      if (e.target.closest('[data-fzedit]')){ fzDraft.mode = 'edit'; fzDrawModal(); return; }
+      if (e.target.closest('[data-fzclear]')){ fzDraft.text = ''; fzCommit(); return; }
+      if (e.target.closest('[data-fzsave]')){ fzCommit(); return; }
+      const sw = e.target.closest('[data-fzcol]');
+      if (sw){ fzDraft.col = sw.dataset.fzcol || null; fzDrawModal(); return; }
+    });
+    m.addEventListener('input', e => {
+      if (!fzDraft) return;
+      if (e.target.id === 'fzmText') fzDraft.text = e.target.value;
+      if (e.target.id === 'fzmDate') fzDraft.date = e.target.value;
+      if (e.target.id === 'fzmColor'){
+        fzDraft.col = e.target.value;
+        m.querySelectorAll('[data-fzcol]').forEach(b => b.classList.remove('on'));
+      }
+    });
+    m.addEventListener('keydown', e => { if (e.target.id === 'fzmText' && e.key === 'Enter'){ e.preventDefault(); fzCommit(); } });
+  }
+  if (!fzDraft){ m.style.display = 'none'; m.innerHTML = ''; return; }
+  m.style.display = 'flex';
+  if (fzDraft.mode === 'view'){
+    m.innerHTML = `<div class="fzmbox">
+      <div class="fzmtitle">Casella ${esc(fzDraft.id)}</div>
+      ${fzDraft.col ? `<div class="fzmbar" style="background:${fzDraft.col}"></div>` : ''}
+      <div class="fzmvtext"${fzDraft.col ? ` style="color:${fzDraft.col}"` : ''}>${esc(fzDraft.text)}</div>
+      <div class="note">${fzDraft.date ? 'Data: ' + esc(fzDateIT(fzDraft.date)) : 'Nessuna data'}</div>
+      <div class="fzmbtns"><button type="button" class="btn" data-fzcancel="1">Chiudi</button><button type="button" class="btn big" data-fzedit="1">Modifica</button></div></div>`;
+    return;
+  }
+  m.innerHTML = `<div class="fzmbox">
+    <div class="fzmtitle">Casella ${esc(fzDraft.id)}</div>
+    <input id="fzmText" value="${esc(fzDraft.text)}" placeholder="Cosa c'è dentro (vuoto = libera)" maxlength="200">
+    <label class="fzmrow">Data <input id="fzmDate" type="date" value="${esc(fzDraft.date)}"></label>
+    <div class="fzmrow">Colore
+      <div class="fzmcols">${FZ_COLS.map(([c, n]) => `<button type="button" class="fzsw${fzDraft.col === c ? ' on' : ''}" style="background:${c}" data-fzcol="${c}" title="${n}"></button>`).join('')}
+        <button type="button" class="fzsw none${!fzDraft.col ? ' on' : ''}" data-fzcol="" title="senza colore">×</button>
+        <input id="fzmColor" type="color" class="fzmcolor" value="${esc(fzDraft.col || '#2f6fd6')}" title="Altro colore">
+      </div></div>
+    <div class="fzmbtns">${fzDraft.full ? '<button type="button" class="btn danger" data-fzclear="1">Svuota</button>' : ''}<button type="button" class="btn" data-fzcancel="1">Annulla</button><button type="button" class="btn big" data-fzsave="1">Salva</button></div></div>`;
+  setTimeout(() => { const i = document.getElementById('fzmText'); if (i){ i.focus(); i.setSelectionRange(i.value.length, i.value.length); } }, 30);
+}
 async function fzCommit(){
   const box = fzBoxes().find(b => b.key === fzBox); if (!box || !fzDraft) return;
   const t = (fzDraft.text || '').trim();
   if (!t) delete box.cells[fzDraft.id];
-  else box.cells[fzDraft.id] = fzDraft.col ? {t, c: fzDraft.col} : t;
+  else {
+    const v = {t};
+    if (fzDraft.col) v.c = fzDraft.col;
+    if (fzDraft.date) v.d = fzDraft.date;
+    box.cells[fzDraft.id] = (v.c || v.d) ? v : t;
+  }
   fzFocus = fzDraft.id; fzDraft = null; fzDrawModal();
   await fzSave(fzBox, box);
   render();
@@ -1843,11 +1880,11 @@ function freezerHTML(){
   for (let r = 0; r < 9; r++){
     grid += `<div class="fzhead">${FZ_ROWS[r]}</div>`;
     for (let c = 1; c <= 9; c++){
-      const id = FZ_ROWS[r] + c, cv = box.cells[id], t = fzText(cv), col = fzColor(cv);
+      const id = FZ_ROWS[r] + c, cv = box.cells[id], t = fzText(cv), col = fzColor(cv), dt = fzDate(cv);
       const hl = q && t.toLowerCase().includes(q) ? ' hl' : '';
       const foc = fzFocus === id ? ' foc' : '';
-      grid += `<button type="button" class="fzc${t ? ' full' : ''}${col ? ' cat' : ''}${hl}${foc}"${col ? ` style="--c:${col}"` : ''} draggable="${t ? 'true' : 'false'}" data-fzcell="${id}" title="${esc(id + (t ? ': ' + t : ' (libera)'))}">
-        <span class="fzid">${id}</span><span class="fzt"${col ? ` style="color:${col};font-weight:700"` : ''}>${esc(t)}</span></button>`;
+      grid += `<button type="button" class="fzc${t ? ' full' : ''}${col ? ' cat' : ''}${hl}${foc}"${col ? ` style="--c:${col}"` : ''} draggable="${t ? 'true' : 'false'}" data-fzcell="${id}" title="${esc(id + (t ? ': ' + t : ' (libera)') + (dt ? ' · ' + fzDateIT(dt) : ''))}">
+        <span class="fzid">${id}</span>${dt ? `<span class="fzd">${esc(fzDateIT(dt).slice(0, 5))}</span>` : ''}<span class="fzt"${col ? ` style="color:${col};font-weight:700"` : ''}>${esc(t)}</span></button>`;
     }
   }
   return `<div class="fzwrap">
