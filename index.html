@@ -1739,7 +1739,7 @@ function grpPath(id){
 let fzBox = null, fzQuery = '', fzFocus = null;
 const FZ_ROWS = 'ABCDEFGHI';
 function fzBoxes(){
-  return Object.keys(appNames).filter(k => k.startsWith('freezer:')).map(k => {
+  return Object.keys(appNames).filter(k => k.startsWith('freezer:' + curCal + ':')).map(k => {
     let v = {}; try { v = JSON.parse(appNames[k]) || {}; } catch(_) {}
     return {key: k, name: v.name || 'Scatola', cells: v.cells || {}};
   }).sort((a, b) => a.name.localeCompare(b.name, 'it'));
@@ -2945,6 +2945,7 @@ function topHTML(){
     const c = calById(curCal);
     return `<button type="button" class="btn" id="back">← ${esc(labName(curLab))}</button>
       <span class="ttl">${c ? lockLabel(c) + esc(c.name) : ''}</span><span class="spacer"></span>
+      <button type="button" class="btn" id="freezerBtn">Freezer</button>
       <button type="button" class="btn" id="protos">Protocolli</button>
       <button type="button" class="btn gear" id="calGear" aria-label="Impostazioni" title="Impostazioni">⚙</button>${fs}`;
   }
@@ -2963,7 +2964,6 @@ function topHTML(){
       ${curLab !== 'none' ? `<button type="button" class="btn" id="grpNew">+ Gruppo</button>` : ''}`;
   }
   return `<span class="ttl">Laboratori</span><span class="spacer"></span>
-    <button type="button" class="btn" id="freezerBtn">Freezer</button>
     <button type="button" class="btn" id="labNew">+ Laboratorio</button>${fs}`;
 }
 
@@ -3401,7 +3401,7 @@ root.addEventListener('click', e => {
     if (fz){
       if (fz.dataset.fznew !== undefined){
         const name = (prompt('Nome della scatola (es. Cellule T47D, scatola 1):') || '').trim(); if (!name) return;
-        fzSave('freezer:' + crypto.randomUUID(), {name, cells: {}}).then(render); return;
+        fzSave('freezer:' + curCal + ':' + crypto.randomUUID(), {name, cells: {}}).then(render); return;
       }
       if (fz.dataset.fzbox !== undefined){ fzBox = fz.dataset.fzbox; fzQuery = ''; fzFocus = null; render(); return; }
       if (fz.dataset.fzback !== undefined){ fzBox = null; fzQuery = ''; fzFocus = null; render(); return; }
@@ -3417,7 +3417,7 @@ root.addEventListener('click', e => {
     }
   }
   if (e.target.closest('#back')){
-    if (view === 'freezer'){ if (fzBox){ fzBox = null; fzQuery = ''; fzFocus = null; } else view = 'home'; render(); return; }
+    if (view === 'freezer'){ if (fzBox){ fzBox = null; fzQuery = ''; fzFocus = null; } else view = curCal ? 'cal' : 'home'; render(); return; }
     goBack(); return;
   }
   if (e.target.closest('[data-cal-ren]')){ renameCalById(e.target.closest('[data-cal-ren]').dataset.calRen); return; }
