@@ -511,7 +511,7 @@ html[data-style="win95"] ::selection{background:#000080;color:#ffffff}
   .fzres{display:block;text-align:left;margin-bottom:6px;font-weight:500}
   .fzgrid{display:grid;grid-template-columns:26px repeat(9,1fr);gap:3px;background:var(--panel);padding:8px;border-radius:14px;border:2px solid var(--line)}
   .fzhead{display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--muted)}
-  .fzc{aspect-ratio:1;min-width:0;padding:3px;border:1px solid #d9d9d9;border-radius:6px;background:#fff;color:#222;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;overflow:hidden;font-size:10px;line-height:1.15;cursor:pointer;position:relative;user-select:none}
+  .fzc{aspect-ratio:1;min-width:0;padding:3px;border:1px solid #d9d9d9;border-radius:6px;background:#fff;color:#222;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;overflow:hidden;font-size:10px;line-height:1.15;cursor:pointer;position:relative;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;-webkit-user-drag:none;touch-action:manipulation}
   .fzc .fzid{position:absolute;top:2px;left:4px;font-size:9px;color:#999}
   .fzc .fzd{position:absolute;top:2px;right:4px;font-size:9px;color:#555}
   .fzc .fzt{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word;width:100%;padding-top:8px}
@@ -528,7 +528,7 @@ html[data-style="win95"] ::selection{background:#000080;color:#ffffff}
   .fzpooladd{display:flex;gap:6px;margin-bottom:6px}
   .fzpooladd input{flex:1;min-width:0}
   .fzpoollist{display:flex;flex-wrap:wrap;gap:6px}
-  .fzchip{display:inline-flex;align-items:center;gap:4px;padding:4px 6px 4px 10px;border-radius:14px;background:#fff;border:1px solid #cfcfcf;font-size:12px;cursor:grab;user-select:none}
+  .fzchip{display:inline-flex;align-items:center;gap:4px;padding:4px 6px 4px 10px;border-radius:14px;background:#fff;border:1px solid #cfcfcf;font-size:12px;cursor:grab;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;-webkit-user-drag:none}
   .fzchipx{border:none;background:none;cursor:pointer;color:#888;font-size:14px;padding:0 2px}
   .fzselbar{position:fixed;left:50%;transform:translateX(-50%);top:12px;display:none;align-items:center;gap:10px;padding:8px 12px;border-radius:12px;background:#222;color:#fff;z-index:60;font-size:13px}
 
@@ -1773,12 +1773,13 @@ const FZ_ROWS = 'ABCDEFGHI';
 function fzBoxes(){
   return Object.keys(appNames).filter(k => k.startsWith('freezer:' + curCal + ':')).map(k => {
     let v = {}; try { v = JSON.parse(appNames[k]) || {}; } catch(_) {}
-    return {key: k, name: v.name || 'Scatola', cells: v.cells || {}};
+    return {key: k, name: v.name || 'Scatola', cells: v.cells || {}, pool: v.pool || []};
   }).sort((a, b) => a.name.localeCompare(b.name, 'it'));
 }
 async function fzSave(key, box){
-  const val = JSON.stringify({name: box.name, cells: box.cells});
+  const val = JSON.stringify({name: box.name, cells: box.cells, pool: box.pool || []});
   appNames[key] = val;
+  render();
   const {error} = await sb.from('app_settings').upsert({key, value: val});
   if (error) flash('Non salvato: serve la tabella app_settings su Supabase.');
 }
@@ -1795,7 +1796,7 @@ function fzResultsHTML(boxes){
 const fzDateIT = d => d ? d.split('-').reverse().join('/') : '';
 const fzDate = v => (v && typeof v === 'object') ? (v.d || '') : '';
 // sposta una casella in un'altra posizione; se la destinazione è piena, le due caselle si scambiano
-let fzSel = new Set(), fzSelMode = false, fzSelBox = null, fzLongSel = false;
+let fzSel = new Set(), fzSelMode = false, fzSelBox = null, fzLongSel = false, fzTouchDown = false;
 // caselle da trascinare: se la casella trascinata fa parte di una selezione multipla, si muove tutta la selezione
 const fzIdsDrag = id => (fzSelBox === fzBox && fzSel.has(id) && fzSel.size > 1) ? [...fzSel] : [id];
 const fzParse = id => { const m = /^([A-Z]+)(\d+)$/.exec(id); return m ? [FZ_ROWS.indexOf(m[1]), +m[2]] : null; };
@@ -4132,7 +4133,7 @@ root.addEventListener('pointerdown', e => {
   if (e.pointerType !== 'touch') return;
   const el = e.target.closest('[data-task],[data-bk],[data-pdrag],[data-fzcell],[data-fzpool]');
   if (!el) return;
-  fzLongSel = false; fzTrashShow(false);
+  fzLongSel = false; fzTouchDown = true; fzTrashShow(false);
   tdPend = {x: e.clientX, y: e.clientY, el};
   tdTimer = setTimeout(() => {
     if (!tdPend) return;
@@ -4171,6 +4172,7 @@ document.addEventListener('pointermove', e => {
 document.addEventListener('touchmove', e => { if (tdDrag) e.preventDefault(); }, {passive: false});
 document.addEventListener('pointerup', e => {
   if (e.pointerType !== 'touch') return;
+  fzTouchDown = false;
   if (!tdDrag){ tdClear(); return; }
   const drag = tdDrag;
   const zone = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-drop]');
@@ -4199,7 +4201,9 @@ document.addEventListener('pointerup', e => {
   if (drag.id.startsWith('bk:')) dropBooking(zone, e.clientY, drag.id.slice(3));
   else applyDrop(zone, e.clientY, drag.id);
 });
-document.addEventListener('pointercancel', e => { if (e.pointerType === 'touch'){ tdClear(); fzTrashShow(false); } });
+document.addEventListener('pointercancel', e => { if (e.pointerType === 'touch'){ fzTouchDown = false; tdClear(); fzTrashShow(false); } });
+document.addEventListener('dragstart', e => { if (fzTouchDown) e.preventDefault(); }, true);
+root.addEventListener('contextmenu', e => { if (e.target.closest('[data-fzcell],[data-fzpool]')) e.preventDefault(); });
 
 // ---- protocolli: trascinamento col mouse verso una cartella ----
 let pdDragId = null;
