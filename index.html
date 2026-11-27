@@ -1795,7 +1795,7 @@ function fzResultsHTML(boxes){
 const fzDateIT = d => d ? d.split('-').reverse().join('/') : '';
 const fzDate = v => (v && typeof v === 'object') ? (v.d || '') : '';
 // sposta una casella in un'altra posizione; se la destinazione è piena, le due caselle si scambiano
-let fzSel = new Set(), fzSelMode = false, fzSelBox = null;
+let fzSel = new Set(), fzSelMode = false, fzSelBox = null, fzLongSel = false;
 // caselle da trascinare: se la casella trascinata fa parte di una selezione multipla, si muove tutta la selezione
 const fzIdsDrag = id => (fzSelBox === fzBox && fzSel.has(id) && fzSel.size > 1) ? [...fzSel] : [id];
 const fzParse = id => { const m = /^([A-Z]+)(\d+)$/.exec(id); return m ? [FZ_ROWS.indexOf(m[1]), +m[2]] : null; };
@@ -3615,6 +3615,7 @@ root.addEventListener('click', e => {
       if (fz.dataset.fzres !== undefined){ const [k, id] = fz.dataset.fzres.split('|'); fzBox = k; fzFocus = id; render(); return; }
       if (fz.dataset.fzcell !== undefined){
         const id = fz.dataset.fzcell;
+        if (fzLongSel){ fzLongSel = false; return; }
         if (fzSelMode || e.ctrlKey || e.metaKey || e.shiftKey){
           const box = fzBoxes().find(b => b.key === fzBox);
           if (box && box.cells[id] !== undefined){ fzSel.has(id) ? fzSel.delete(id) : fzSel.add(id); fzSelBox = fzBox; }
@@ -4131,9 +4132,20 @@ root.addEventListener('pointerdown', e => {
   if (e.pointerType !== 'touch') return;
   const el = e.target.closest('[data-task],[data-bk],[data-pdrag],[data-fzcell],[data-fzpool]');
   if (!el) return;
+  fzLongSel = false; fzTrashShow(false);
   tdPend = {x: e.clientX, y: e.clientY, el};
   tdTimer = setTimeout(() => {
     if (!tdPend) return;
+    if (tdPend.el.dataset.fzcell !== undefined && !(fzSelBox === fzBox && fzSel.has(tdPend.el.dataset.fzcell))){
+      // pressione lunga su una casella non selezionata: attiva la selezione e la seleziona
+      const id = tdPend.el.dataset.fzcell;
+      tdPend = null;
+      if (!document.querySelector(`[data-fzcell="${id}"].full`)) return;
+      fzSelBox = fzBox; fzSelMode = true; fzSel.add(id); fzFocus = id; fzLongSel = true;
+      fzSyncBar(); render();
+      if (navigator.vibrate) navigator.vibrate(15);
+      return;
+    }
     const r = tdPend.el.getBoundingClientRect();
     const ghost = tdPend.el.cloneNode(true);
     ghost.style.cssText = `position:fixed;pointer-events:none;opacity:.85;z-index:999;margin:0;width:${r.width}px;left:${tdPend.x}px;top:${tdPend.y}px;transform:translate(-50%,-50%)`;
@@ -4187,7 +4199,7 @@ document.addEventListener('pointerup', e => {
   if (drag.id.startsWith('bk:')) dropBooking(zone, e.clientY, drag.id.slice(3));
   else applyDrop(zone, e.clientY, drag.id);
 });
-document.addEventListener('pointercancel', e => { if (e.pointerType === 'touch') tdClear(); });
+document.addEventListener('pointercancel', e => { if (e.pointerType === 'touch'){ tdClear(); fzTrashShow(false); } });
 
 // ---- protocolli: trascinamento col mouse verso una cartella ----
 let pdDragId = null;
