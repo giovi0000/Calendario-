@@ -511,7 +511,7 @@ html[data-style="win95"] ::selection{background:#000080;color:#ffffff}
   .fzres{display:block;text-align:left;margin-bottom:6px;font-weight:500}
   .fzgrid{display:grid;grid-template-columns:26px repeat(9,1fr);gap:3px;background:var(--panel);padding:8px;border-radius:14px;border:2px solid var(--line)}
   .fzhead{display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--muted)}
-  .fzc{aspect-ratio:1;min-width:0;padding:3px;border:1px solid #d9d9d9;border-radius:6px;background:#fff;color:#222;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;overflow:hidden;font-size:10px;line-height:1.15;cursor:pointer;position:relative;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;-webkit-user-drag:none;touch-action:manipulation}
+  .fzc{aspect-ratio:1;min-width:0;padding:3px;border:1px solid #d9d9d9;border-radius:6px;background:#fff;color:#222;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;overflow:hidden;font-size:10px;line-height:1.15;cursor:pointer;position:relative;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;touch-action:manipulation}
   .fzc .fzid{position:absolute;top:2px;left:4px;font-size:9px;color:#999}
   .fzc .fzd{position:absolute;top:2px;right:4px;font-size:9px;color:#555}
   .fzc .fzt{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word;width:100%;padding-top:8px}
@@ -528,7 +528,8 @@ html[data-style="win95"] ::selection{background:#000080;color:#ffffff}
   .fzpooladd{display:flex;gap:6px;margin-bottom:6px}
   .fzpooladd input{flex:1;min-width:0}
   .fzpoollist{display:flex;flex-wrap:wrap;gap:6px}
-  .fzchip{display:inline-flex;align-items:center;gap:4px;padding:4px 6px 4px 10px;border-radius:14px;background:#fff;border:1px solid #cfcfcf;font-size:12px;cursor:grab;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;-webkit-user-drag:none}
+  .fzchip{display:inline-flex;align-items:center;gap:4px;padding:4px 6px 4px 10px;border-radius:14px;background:#fff;border:1px solid #cfcfcf;font-size:12px;cursor:grab;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+  .fzchip.on{border-color:#2f6fd6;background:#e8f0fe;box-shadow:0 0 0 2px #2f6fd6 inset}
   .fzchipx{border:none;background:none;cursor:pointer;color:#888;font-size:14px;padding:0 2px}
   .fzselbar{position:fixed;left:50%;transform:translateX(-50%);top:12px;display:none;align-items:center;gap:10px;padding:8px 12px;border-radius:12px;background:#222;color:#fff;z-index:60;font-size:13px}
 
@@ -1838,12 +1839,14 @@ function fzTrashShow(on){
   t.style.display = 'flex';
 }
 // lista di campioni da sistemare: si aggiungono qui e si trascinano nelle caselle libere
-let fzPoolDrag = null;
+let fzPoolDrag = null, fzPoolPick = null;
 function fzPoolHTML(box){
   const pool = box.pool || [];
-  return `<div class="fzpool"><div class="fzpooltitle">Da sistemare: trascina un campione in una casella libera</div>
+  const pick = fzPoolPick && fzPoolPick.box === fzBox ? fzPoolPick.idx : -1;
+  const title = pick >= 0 ? 'Campione selezionato: ora tocca una casella libera (o tocca di nuovo il campione per annullare)' : 'Da sistemare: trascina un campione in una casella libera, oppure tocca il campione e poi una casella libera';
+  return `<div class="fzpool"><div class="fzpooltitle">${title}</div>
     <div class="fzpooladd"><input id="fzPoolIn" placeholder="Nuovo campione, poi Invio" maxlength="200"><button type="button" class="btn" data-fzpooladd="1">Aggiungi</button></div>
-    <div class="fzpoollist">${pool.length ? pool.map((p, i) => `<span class="fzchip" draggable="true" data-fzpool="${i}">${esc(p)}<button type="button" class="fzchipx" data-fzpooldel="${i}" title="Rimuovi">×</button></span>`).join('') : '<span class="note">Lista vuota</span>'}</div></div>`;
+    <div class="fzpoollist">${pool.length ? pool.map((p, i) => `<span class="fzchip${i === pick ? ' on' : ''}" draggable="true" data-fzpool="${i}">${esc(p)}<button type="button" class="fzchipx" data-fzpooldel="${i}" title="Rimuovi">×</button></span>`).join('') : '<span class="note">Lista vuota</span>'}</div></div>`;
 }
 function fzPoolMut(fn){
   const box = fzBoxes().find(b => b.key === fzBox); if (!box) return;
@@ -1853,6 +1856,7 @@ function fzPoolMut(fn){
   fzSave(fzBox, box);
 }
 function fzPlaceFromPool(idx, id){
+  fzPoolPick = null;
   fzPoolMut(box => {
     const p = (box.pool || [])[idx];
     if (p === undefined || box.cells[id] !== undefined) return;
@@ -3622,6 +3626,7 @@ root.addEventListener('click', e => {
           if (box && box.cells[id] !== undefined){ fzSel.has(id) ? fzSel.delete(id) : fzSel.add(id); fzSelBox = fzBox; }
           fzFocus = id; fzSyncBar(); render(); return;
         }
+        if (fzPoolPick && fzPoolPick.box === fzBox && !fz.classList.contains('full')){ const pk = fzPoolPick.idx; fzPlaceFromPool(pk, id); return; }
         fzSel.clear(); fzSyncBar(); fzEditCell(id); return;
       }
     }
@@ -4058,6 +4063,12 @@ root.addEventListener('drop', e => {
 });
 root.addEventListener('dragend', () => { fzDragId = null; fzTrashShow(false); fzPoolDrag = null; });
 root.addEventListener('click', e => {
+  const chip = e.target.closest('[data-fzpool]');
+  if (chip && !e.target.closest('[data-fzpooldel]')){
+    const idx = +chip.dataset.fzpool;
+    fzPoolPick = (fzPoolPick && fzPoolPick.box === fzBox && fzPoolPick.idx === idx) ? null : {box: fzBox, idx};
+    render(); return;
+  }
   if (e.target.closest('[data-fzpooladd]')){
     const t = (document.getElementById('fzPoolIn')?.value || '').trim();
     if (t) fzPoolMut(box => { box.pool = (box.pool || []).concat(t); });
