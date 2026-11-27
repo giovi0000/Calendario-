@@ -1844,9 +1844,9 @@ function fzPoolHTML(box){
   const pool = box.pool || [];
   const pick = fzPoolPick && fzPoolPick.box === fzBox ? fzPoolPick.idx : -1;
   const title = pick >= 0 ? 'Campione selezionato: ora tocca una casella libera (o tocca di nuovo il campione per annullare)' : 'Da sistemare: trascina un campione in una casella libera, oppure tocca il campione e poi una casella libera';
-  return `<div class="fzpool"><div class="fzpooltitle">${title}</div>
+  return `<div class="fzpool" data-fzpoolzone="1"><div class="fzpooltitle">${title}</div>
     <div class="fzpooladd"><input id="fzPoolIn" placeholder="Nuovo campione, poi Invio" maxlength="200"><button type="button" class="btn" data-fzpooladd="1">Aggiungi</button></div>
-    <div class="fzpoollist">${pool.length ? pool.map((p, i) => `<span class="fzchip${i === pick ? ' on' : ''}" draggable="true" data-fzpool="${i}">${esc(p)}<button type="button" class="fzchipx" data-fzpooldel="${i}" title="Rimuovi">×</button></span>`).join('') : '<span class="note">Lista vuota</span>'}</div></div>`;
+    <div class="fzpoollist">${pool.length ? pool.map((p, i) => `<span class="fzchip${i === pick ? ' on' : ''}" draggable="true" data-fzpool="${i}">${esc(fzText(p))}<button type="button" class="fzchipx" data-fzpooldel="${i}" title="Rimuovi">×</button></span>`).join('') : '<span class="note">Lista vuota</span>'}</div></div>`;
 }
 function fzPoolMut(fn){
   const box = fzBoxes().find(b => b.key === fzBox); if (!box) return;
@@ -1854,6 +1854,14 @@ function fzPoolMut(fn){
   fn(box);
   render();
   fzSave(fzBox, box);
+}
+function fzReturnToPool(ids){
+  fzSel.clear();
+  fzPoolMut(box => {
+    box.pool = box.pool || [];
+    ids.forEach(id => { if (box.cells[id] !== undefined){ box.pool.push(box.cells[id]); delete box.cells[id]; } });
+  });
+  fzSyncBar();
 }
 function fzPlaceFromPool(idx, id){
   fzPoolPick = null;
@@ -1905,8 +1913,25 @@ function fzEditCell(id){
   const box = fzBoxes().find(b => b.key === fzBox); if (!box) return;
   const cur = box.cells[id];
   const full = !!fzText(cur);
-  fzDraft = {id, text: fzText(cur), col: fzColor(cur), date: fzDate(cur), full, mode: full ? 'view' : 'edit'};
+  fzDraft = {id, text: fzText(cur), col: fzColor(cur), date: fzDate(cur), full, colTouched: full, mode: full ? 'view' : 'edit'};
   fzDrawModal();
+}
+function fzAutoColor(m){
+  if (fzDraft.colTouched) return;
+  const typed = (fzDraft.text || '').trim().toLowerCase();
+  if (typed.length < 3) return;
+  // usa il colore della casella che condivide l'inizio più lungo (almeno 3 caratteri)
+  let hit = null, best = 0;
+  for (const b of fzBoxes()) for (const v of Object.values(b.cells)){
+    const t = fzText(v).trim().toLowerCase(), c = fzColor(v);
+    if (!c || !t) continue;
+    let n = 0; while (n < typed.length && n < t.length && typed[n] === t[n]) n++;
+    if (n >= 3 && n > best){ best = n; hit = c; }
+  }
+  if (!hit || hit === fzDraft.col) return;
+  fzDraft.col = hit;
+  m.querySelectorAll('[data-fzcol]').forEach(s => s.classList.toggle('on', s.dataset.fzcol === hit));
+  const ci = m.querySelector('#fzmColor'); if (ci) ci.value = hit;
 }
 function fzDrawModal(){
   let m = document.getElementById('fzModal');
@@ -1919,14 +1944,14 @@ function fzDrawModal(){
       if (e.target.closest('[data-fzclear]')){ fzDraft.text = ''; fzCommit(); return; }
       if (e.target.closest('[data-fzsave]')){ fzCommit(); return; }
       const sw = e.target.closest('[data-fzcol]');
-      if (sw){ fzDraft.col = sw.dataset.fzcol || null; fzDrawModal(); return; }
+      if (sw){ fzDraft.col = sw.dataset.fzcol || null; fzDraft.colTouched = true; fzDrawModal(); return; }
     });
     m.addEventListener('input', e => {
       if (!fzDraft) return;
-      if (e.target.id === 'fzmText') fzDraft.text = e.target.value;
+      if (e.target.id === 'fzmText'){ fzDraft.text = e.target.value; fzAutoColor(m); }
       if (e.target.id === 'fzmDate') fzDraft.date = e.target.value;
       if (e.target.id === 'fzmColor'){
-        fzDraft.col = e.target.value;
+        fzDraft.col = e.target.value; fzDraft.colTouched = true;
         m.querySelectorAll('[data-fzcol]').forEach(b => b.classList.remove('on'));
       }
     });
@@ -4062,6 +4087,16 @@ root.addEventListener('drop', e => {
   moveFzCell(from, c.dataset.fzcell);
 });
 root.addEventListener('dragend', () => { fzDragId = null; fzTrashShow(false); fzPoolDrag = null; });
+root.addEventListener('dragover', e => {
+  if (!fzDragId || !e.target.closest('[data-fzpoolzone]')) return;
+  e.preventDefault(); e.dataTransfer.dropEffect = 'move';
+});
+root.addEventListener('drop', e => {
+  if (!fzDragId || !e.target.closest('[data-fzpoolzone]')) return;
+  e.preventDefault();
+  const from = fzDragId; fzDragId = null; fzTrashShow(false);
+  fzReturnToPool(fzIdsDrag(from));
+});
 root.addEventListener('click', e => {
   const chip = e.target.closest('[data-fzpool]');
   if (chip && !e.target.closest('[data-fzpooldel]')){
@@ -4205,6 +4240,7 @@ document.addEventListener('pointerup', e => {
     const from = drag.id.slice(3);
     const hit = document.elementFromPoint(e.clientX, e.clientY);
     if (hit?.closest('[data-fztrash]')) fzDeleteIds(fzIdsDrag(from));
+    else if (hit?.closest('[data-fzpoolzone]')) fzReturnToPool(fzIdsDrag(from));
     else { const cz = hit?.closest('[data-fzcell]'); if (cz) moveFzCell(from, cz.dataset.fzcell); }
     return;
   }
